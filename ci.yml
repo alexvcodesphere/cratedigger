@@ -1,29 +1,19 @@
 schemaVersion: v0.4
-
-# Setup that runs before the app is deployed.
 prepare:
   steps:
     - name: Install yt-dlp via Nix (for the audio download button)
-      # Installed via Nix, not pip: only ~/app and Nix persist into the deployment,
-      # so a pip --user install (in ~/.local) wouldn't ship to the replica.
       command: nix-env -iA nixpkgs.yt-dlp || (nix-channel --update && nix-env -iA nixpkgs.yt-dlp) || true
     - name: Install ffmpeg via Nix (mp3 conversion for downloads)
       command: command -v ffmpeg >/dev/null 2>&1 || nix-env -iA nixpkgs.ffmpeg || (nix-channel --update && nix-env -iA nixpkgs.ffmpeg) || true
-
-# Verification that runs after prepare.
 test:
   steps:
     - name: Syntax-check the server
       command: python3 -m py_compile server.py
-
-# Deploy target: the Python server, serving the app on the main route "/".
 run:
   cratedigger:
-    steps:
-      - name: Start Crate Digger
-        command: python3 server.py
-    plan: 21
     healthEndpoint: http://localhost:3000/health
+    plan: 201
+    replicas: 1
     network:
       ports:
         - port: 3000
@@ -32,5 +22,8 @@ run:
         - port: 3000
           path: /
     env:
-      PORT: "3000"
-      HOST: "0.0.0.0"
+      PORT: 3000
+      HOST: 0.0.0.0
+    steps:
+      - name: Start Crate Digger
+        command: python3 server.py
