@@ -1,0 +1,35 @@
+schemaVersion: v0.4
+
+# Setup that runs before the app is deployed.
+prepare:
+  steps:
+    - name: Install yt-dlp (for the audio download button)
+      # Best-effort: if it can't install, the app still deploys and only the
+      # Download button is unavailable. mp3 conversion additionally needs ffmpeg
+      # in the workspace image.
+      command: python3 -m pip install --upgrade yt-dlp || python3 -m pip install --user --upgrade yt-dlp || true
+
+# Verification that runs after prepare.
+test:
+  steps:
+    - name: Syntax-check the server
+      command: python3 -m py_compile server.py
+
+# Deploy target: the Python server, serving the app on the main route "/".
+run:
+  cratedigger:
+    steps:
+      - name: Start Crate Digger
+        command: python3 server.py
+    plan: 21
+    healthEndpoint: http://localhost:3000/health
+    network:
+      ports:
+        - port: 3000
+          isPublic: false
+      paths:
+        - port: 3000
+          path: /
+    env:
+      PORT: "3000"
+      HOST: "0.0.0.0"

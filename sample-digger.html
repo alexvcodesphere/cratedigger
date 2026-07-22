@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crate Digger — random sample finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #08080b;
+    --glass: rgba(19, 19, 25, .55);
+    --glass-border: rgba(255, 255, 255, .08);
+    --text: #f4f4f6;
+    --muted: #9a9aa6;
+    --accent: #f018c8;
+    --accent-2: #8a2be2;
+    --accent-soft: rgba(240, 24, 200, .16);
+    --dyn1: #f018c8;          /* dynamic, extracted from cover art */
+    --dyn2: #7b2ff7;
+    --radius: 20px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 "Space Grotesk", -apple-system, "Segoe UI", sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ---------- ambient background ---------- */
+  #bg { position: fixed; inset: 0; z-index: -2; overflow: hidden; background: var(--bg); }
+  .blob {
+    position: absolute; width: 55vmax; height: 55vmax; border-radius: 50%;
+    filter: blur(110px); opacity: .32; mix-blend-mode: screen;
+    transition: background-color 1.6s ease;
+  }
+  .b1 { background-color: var(--dyn1); top: -22%; left: -12%; animation: drift1 26s ease-in-out infinite alternate; }
+  .b2 { background-color: var(--dyn2); bottom: -28%; right: -14%; animation: drift2 34s ease-in-out infinite alternate; }
+  .b3 { background-color: #1b4bff; opacity: .14; top: 30%; left: 40%; width: 40vmax; height: 40vmax; animation: drift3 44s ease-in-out infinite alternate; }
+  @keyframes drift1 { to { transform: translate(12vw, 10vh) scale(1.15); } }
+  @keyframes drift2 { to { transform: translate(-10vw, -12vh) scale(.9); } }
+  @keyframes drift3 { to { transform: translate(-14vw, 8vh) rotate(40deg); } }
+  #grain {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .07;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  }
+
+  /* ---------- header ---------- */
+  header { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; }
+  .logo {
+    font-family: "Unbounded", sans-serif; font-size: 20px; font-weight: 900; letter-spacing: -.5px;
+    background: linear-gradient(100deg, #fff 20%, var(--dyn1) 60%, var(--dyn2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .header-right { display: flex; gap: 10px; align-items: center; }
+  .token-box { display: flex; gap: 8px; align-items: center; }
+  .token-box input {
+    background: var(--glass); border: 1px solid var(--glass-border); color: var(--text);
+    border-radius: 12px; padding: 8px 12px; width: 190px; font-size: 13px; font-family: inherit;
+  }
+  .hint { color: var(--muted); font-size: 12px; }
+
+  /* ---------- layout ---------- */
+  .layout {
+    display: grid;
+    grid-template-columns: 300px minmax(420px, 1fr) 320px;
+    gap: 22px;
+    padding: 0 28px 48px;
+    max-width: 1540px;
+    margin: 0 auto;
+  }
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; }
+    .layout > .main { order: -1; }   /* video first in single-column mode */
+  }
+  .layout > * { min-width: 0; }
+
+  .card {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    padding: 22px;
+    backdrop-filter: blur(22px) saturate(1.3);
+    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  }
+
+  /* ---------- now playing (left) ---------- */
+  .eyebrow {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 11px; font-weight: 700; letter-spacing: .22em; color: var(--muted);
+    margin-bottom: 12px; text-transform: uppercase;
+  }
+  .eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+  .eq i {
+    width: 3px; height: 4px; background: var(--dyn1); border-radius: 2px;
+    transition: background-color 1.6s ease;
+  }
+  body.playing .eq i { animation: eq .9s ease-in-out infinite alternate; }
+  .eq i:nth-child(2) { animation-delay: .25s; } .eq i:nth-child(3) { animation-delay: .5s; }
+  .eq i:nth-child(4) { animation-delay: .12s; }
+  @keyframes eq { from { height: 3px; } to { height: 12px; } }
+
+  #meta h2 { font-size: 21px; font-weight: 700; line-height: 1.25; letter-spacing: -.02em; margin-bottom: 4px; }
+  #m-artist-big { color: var(--muted); font-size: 15px; font-weight: 500; margin-bottom: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .chip {
+    font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
+    background: rgba(255, 255, 255, .07); border: 1px solid var(--glass-border);
+  }
+  .chip.hot { background: var(--accent-soft); border-color: transparent; color: #ff9dec; }
+  .meta-row { display: flex; gap: 12px; padding: 4px 0; font-size: 13.5px; }
+  .meta-row .k { color: var(--muted); width: 70px; flex-shrink: 0; }
+  .meta-row a { color: #7db5f5; text-decoration: none; }
+  .meta-row a:hover { text-decoration: underline; }
+
+  /* vinyl */
+  .vinyl { display: grid; place-items: center; margin-top: 20px; }
+  .disc {
+    width: 210px; aspect-ratio: 1; border-radius: 50%; position: relative;
+    background:
+      radial-gradient(circle at 32% 28%, rgba(255,255,255,.22), transparent 42%),
+      repeating-radial-gradient(circle, #101013 0 2px, #1d1d22 2px 4px);
+    box-shadow: 0 18px 50px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.05);
+    animation: spin 1.82s linear infinite;   /* ~33 rpm */
+    animation-play-state: paused;
+  }
+  body.playing .disc { animation-play-state: running; }
+  .disc img {
+    position: absolute; inset: 31%; width: 38%; height: 38%; margin: auto;
+    border-radius: 50%; object-fit: cover; background: #26262c;
+  }
+  .disc img:not([src]), .lt-disc img:not([src]) { visibility: hidden; }
+  .disc::after {
+    content: ""; position: absolute; inset: 0; margin: auto; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--bg); box-shadow: 0 0 0 2px rgba(255,255,255,.15);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- player (center) ---------- */
+  .player-wrap {
+    position: relative; width: 100%; aspect-ratio: 16 / 9;
+    background: #000; border-radius: var(--radius); overflow: hidden;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 30px 90px -25px color-mix(in srgb, var(--dyn1) 45%, transparent);
+    transition: box-shadow 1.6s ease;
+  }
+  .player-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #status {
+    position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px;
+    align-items: center; justify-content: center;
+    color: var(--muted); font-size: 15px; text-align: center; padding: 24px; pointer-events: none;
+    background: rgba(8, 8, 11, .6); backdrop-filter: blur(6px);
+  }
+  #status b { color: var(--text); }
+  .dig-line { font-family: "Unbounded", sans-serif; font-size: 26px; font-weight: 700; color: var(--text); }
+  .dig-line span { color: var(--dyn1); transition: color 1.6s ease; }
+
+  /* ---------- control dock ---------- */
+  .dock {
+    width: fit-content; margin: 18px auto 0;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 18px; border-radius: 999px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(22px) saturate(1.3);
+    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    box-shadow: 0 24px 70px -25px rgba(0, 0, 0, .9);
+  }
+  .dock button { position: relative; border-radius: 50%; display: grid; place-items: center; padding: 0; }
+  .dock button::after {
+    content: attr(data-key);
+    position: absolute; right: -3px; bottom: -3px;
+    font-size: 9px; font-weight: 700; color: var(--muted);
+    background: rgba(0, 0, 0, .6); border: 1px solid var(--glass-border);
+    border-radius: 6px; padding: 1px 4.5px; pointer-events: none;
+  }
+  .dock-btn { width: 48px; height: 48px; background: rgba(255, 255, 255, .06); }
+  .dock-btn:hover { transform: translateY(-3px) rotate(-7deg) scale(1.07); background: rgba(255, 255, 255, .13); }
+  .dock-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .dock-btn.faved { color: #ff9dec; border-color: rgba(240, 24, 200, .45); background: var(--accent-soft); }
+  .dock-btn.faved svg * { fill: currentColor; }
+  #btn-play svg * { fill: currentColor; stroke: none; }
+  #btn-play .icon-pause { display: none; }
+  body.playing #btn-play .icon-play { display: none; }
+  body.playing #btn-play .icon-pause { display: block; }
+  .dock-btn.pop { animation: pop .38s ease; }
+  @keyframes pop { 40% { transform: scale(1.35) rotate(14deg); } }
+  .dock-btn.loading { pointer-events: none; }
+  .dock-btn.loading svg { animation: dl-pulse 1s ease-in-out infinite; }
+  @keyframes dl-pulse { 0%, 100% { opacity: .35; transform: translateY(0); } 50% { opacity: 1; transform: translateY(2px); } }
+
+  .dig {
+    width: 76px; height: 76px; border: none; color: #fff;
+    font-family: "Unbounded", sans-serif; font-size: 15px; font-weight: 900; letter-spacing: .05em;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 12px 38px -8px var(--accent),
+                inset 0 2px 6px rgba(255, 255, 255, .35),
+                inset 0 -5px 12px rgba(0, 0, 0, .35);
+    animation: glowpulse 2.6s ease-in-out infinite;
+  }
+  .dig:hover { transform: scale(1.08); filter: brightness(1.12); background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .dig:active { transform: scale(.92); }
+  .dig:disabled { cursor: wait; }
+  .dig.digging { animation: digshake .5s ease-in-out infinite; }
+  @keyframes glowpulse {
+    0%, 100% { box-shadow: 0 12px 38px -8px var(--accent), inset 0 2px 6px rgba(255,255,255,.35), inset 0 -5px 12px rgba(0,0,0,.35); }
+    50% { box-shadow: 0 12px 58px -4px var(--accent), inset 0 2px 6px rgba(255,255,255,.35), inset 0 -5px 12px rgba(0,0,0,.35); }
+  }
+  @keyframes digshake {
+    0%, 100% { transform: rotate(0); }
+    25% { transform: rotate(-8deg) scale(.95); }
+    75% { transform: rotate(8deg) scale(.95); }
+  }
+
+  button {
+    background: var(--glass); color: var(--text); border: 1px solid var(--glass-border);
+    cursor: pointer; border-radius: 14px; padding: 13px 17px; font-size: 14px; font-weight: 600;
+    font-family: inherit; backdrop-filter: blur(14px);
+    transition: transform .12s ease, background .15s, border-color .15s;
+  }
+  button:hover { background: rgba(255,255,255,.09); transform: translateY(-1px); }
+  button:active { transform: translateY(0) scale(.98); }
+  button.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border: none; color: #fff; flex: 1; font-size: 15px; letter-spacing: .02em;
+    box-shadow: 0 10px 34px -10px var(--accent);
+  }
+  button.primary:hover { filter: brightness(1.12); }
+  button.primary:disabled { opacity: .55; cursor: wait; }
+  button .key {
+    font-size: 10.5px; font-weight: 700; opacity: .55; margin-left: 6px;
+    border: 1px solid currentColor; border-radius: 5px; padding: 1px 5px;
+  }
+  button.faved { color: #ff9dec; border-color: rgba(240,24,200,.4); }
+
+  /* filters */
+  #filters { margin-top: 16px; display: none; position: relative; }
+  /* z-index lifts the open panel (and its overflowing dropdown menus) above the
+     sibling glass cards, which create their own stacking contexts via backdrop-filter */
+  #filters.open { display: block; position: relative; z-index: 50; animation: rise .28s ease; }
+  .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+  .filter-grid label {
+    display: block; font-size: 11px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+  }
+  .filter-grid input {
+    width: 100%; background: rgba(255,255,255,.06); border: 1px solid var(--glass-border);
+    color: var(--text); border-radius: 12px; padding: 10px 12px; font-size: 14px; font-family: inherit;
+  }
+  .year-pair { display: flex; gap: 8px; }
+
+  /* ---------- custom dropdown (replaces native <select>) ---------- */
+  .csel { position: relative; }
+  .csel-trigger {
+    width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: rgba(255,255,255,.06); border: 1px solid var(--glass-border);
+    color: var(--text); border-radius: 12px; padding: 10px 12px; font-size: 14px; font-family: inherit;
+    text-align: left;
+  }
+  .csel-trigger:hover { background: rgba(255,255,255,.1); transform: none; }
+  .csel-chev { width: 15px; height: 15px; flex-shrink: 0; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .18s ease; }
+  .csel.open .csel-chev { transform: rotate(180deg); }
+  .csel-menu {
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20;
+    background: #17171c; border: 1px solid var(--glass-border); border-radius: 14px;
+    padding: 6px; max-height: 260px; overflow-y: auto;
+    box-shadow: 0 20px 50px -12px rgba(0,0,0,.65);
+    backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    display: none;
+  }
+  .csel.open .csel-menu { display: block; animation: rise .16s ease; }
+  .csel-opt {
+    display: block; width: 100%; text-align: left; background: none; border: none;
+    color: var(--text); font-size: 13.5px; font-family: inherit; padding: 9px 11px;
+    border-radius: 9px; transform: none;
+  }
+  .csel-opt:hover { background: rgba(255,255,255,.08); transform: none; }
+  .csel-opt.sel { background: var(--accent-soft); color: #ff9dec; }
+
+  /* ---------- custom autocomplete (replaces native <datalist> popup) ---------- */
+  .cac { position: relative; }
+  .cac-menu {
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20;
+    background: #17171c; border: 1px solid var(--glass-border); border-radius: 14px;
+    padding: 6px; max-height: 230px; overflow-y: auto;
+    box-shadow: 0 20px 50px -12px rgba(0,0,0,.65);
+    backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    display: none;
+  }
+  .cac-menu.open { display: block; animation: rise .16s ease; }
+  .cac-opt {
+    display: block; width: 100%; text-align: left; background: none; border: none;
+    color: var(--text); font-size: 13.5px; font-family: inherit; padding: 9px 11px;
+    border-radius: 9px; transform: none;
+  }
+  .cac-opt:hover, .cac-opt.hi { background: rgba(255,255,255,.08); transform: none; }
+  .cac-opt mark { background: none; color: #ff9dec; font-weight: 700; }
+  .cac-empty { padding: 9px 11px; font-size: 13px; color: var(--muted); }
+
+  /* tap tempo */
+  #bpm-box { margin-top: 16px; display: none; align-items: center; gap: 20px; }
+  #bpm-box.open { display: flex; animation: rise .28s ease; }
+  .bpm-wrap { position: relative; display: grid; place-items: center; min-width: 130px; }
+  #bpm-pulse {
+    position: absolute; width: 60px; height: 60px; border-radius: 50%;
+    background: var(--dyn1); opacity: 0; transition: background-color 1.6s ease;
+  }
+  #bpm-pulse.beat { animation: beat var(--beat, 0.5s) ease-out infinite; }
+  @keyframes beat { 0% { opacity: .35; transform: scale(.6); } 100% { opacity: 0; transform: scale(1.5); } }
+  #bpm-val { font-family: "Unbounded", sans-serif; font-size: 34px; font-weight: 700; position: relative; }
+  #bpm-val small { font-size: 13px; color: var(--muted); font-weight: 700; }
+
+  /* ---------- sidebar ---------- */
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tabs button { padding: 8px 16px; border-radius: 999px; font-size: 13px; }
+  .tabs button.active { background: var(--accent-soft); color: #ff9dec; border-color: transparent; }
+  .track { display: flex; gap: 10px; padding: 8px; border-radius: 14px; cursor: pointer; align-items: center; }
+  .track:hover { background: rgba(255,255,255,.06); }
+  .track.now { background: var(--accent-soft); }
+  .track img { width: 46px; height: 46px; border-radius: 10px; object-fit: cover; background: #222; flex-shrink: 0; }
+  .track .t { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track .a { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track > div { min-width: 0; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 0; }
+
+  /* ---------- lower third (stream mode) ---------- */
+  #lowerthird {
+    display: none; margin-top: 18px; align-items: center; gap: 18px;
+    padding: 18px 24px;
+  }
+  body.stream #lowerthird { display: flex; }
+  .lt-disc {
+    width: 74px; aspect-ratio: 1; border-radius: 50%; position: relative; flex-shrink: 0;
+    background: repeating-radial-gradient(circle, #101013 0 1.5px, #1d1d22 1.5px 3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    animation: spin 1.82s linear infinite; animation-play-state: paused;
+  }
+  body.playing .lt-disc { animation-play-state: running; }
+  .lt-disc img { position: absolute; inset: 28%; width: 44%; height: 44%; margin: auto; border-radius: 50%; object-fit: cover; }
+  .lt-text { min-width: 0; flex: 1; }
+  .lt-title { font-family: "Unbounded", sans-serif; font-size: 22px; font-weight: 700; white-space: nowrap; overflow: hidden; }
+  .lt-title span { display: inline-block; }
+  .lt-title.scroll span { padding-right: 80px; animation: marquee var(--marquee, 14s) linear infinite; }
+  @keyframes marquee { to { transform: translateX(-50%); } }
+  .lt-sub { color: var(--muted); font-size: 14px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lt-bpm {
+    flex-shrink: 0; font-family: "Unbounded", sans-serif; font-size: 17px; font-weight: 700;
+    padding: 10px 18px; border-radius: 999px; background: var(--accent-soft); color: #ff9dec;
+  }
+
+  /* stream mode: hide everything except player + lower third + controls */
+  body.stream #meta, body.stream .side, body.stream #filters,
+  body.stream #bpm-box, body.stream .token-box { display: none !important; }
+  body.stream .layout { grid-template-columns: 1fr; max-width: 1060px; }
+
+  /* ---------- mobile ---------- */
+  @media (max-width: 640px) {
+    header { flex-wrap: wrap; row-gap: 10px; padding: 14px 16px; }
+    .token-box .hint { display: none; }
+    .token-box input { width: 130px; }
+    .layout { padding: 0 14px 110px; gap: 14px; }   /* room for the fixed dock */
+    .card { padding: 16px; }
+    #meta h2 { font-size: 18px; }
+    .vinyl { display: none; }
+    .dig-line { font-size: 19px; }
+    #status { font-size: 13.5px; }
+    .dock {
+      position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+      z-index: 5; margin: 0; gap: 8px; padding: 8px 12px; max-width: calc(100vw - 20px);
+    }
+    .dock-btn { width: 42px; height: 42px; }
+    .dock-btn svg { width: 18px; height: 18px; }
+    .dig { width: 62px; height: 62px; font-size: 13px; }
+    #bpm-box { flex-wrap: wrap; gap: 12px; }
+    #lowerthird { gap: 10px; padding: 12px 14px; }
+    .lt-disc { width: 52px; }
+    .lt-title { font-size: 15px; }
+    .lt-sub { font-size: 12px; }
+    .lt-bpm { font-size: 13px; padding: 8px 12px; }
+  }
+
+  /* ---------- rarity (from Discogs want/have stats) ---------- */
+  .chip.tier { text-transform: uppercase; letter-spacing: .09em; font-size: 11px; border-color: transparent; }
+  .chip.tier-common { background: rgba(143,160,184,.15); color: #aebdd1; }
+  .chip.tier-rare { background: rgba(63,169,255,.17); color: #7cc4ff; }
+  .chip.tier-epic { background: rgba(160,107,255,.2); color: #c5a3ff; }
+  .chip.tier-legendary { background: rgba(255,185,48,.2); color: #ffd27a; text-shadow: 0 0 16px rgba(255,185,48,.6); }
+
+  /* ---------- rolls-left meter (Discogs rate-limit budget) ---------- */
+  .fuel {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 14px; border-radius: 12px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    font-size: 12.5px; color: var(--muted); white-space: nowrap;
+  }
+  .fuel b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .fuel-bar { width: 52px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.09); overflow: hidden; }
+  .fuel-bar i {
+    display: block; height: 100%; width: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent-2), var(--accent));
+    transition: width .5s ease;
+  }
+  .fuel.low { border-color: rgba(255,92,92,.4); }
+  .fuel.low .fuel-bar i { background: #ff5c5c; }
+  .fuel.low b { color: #ff8484; }
+
+  /* ---------- digging indicator (video keeps playing underneath) ---------- */
+  .pull-pill {
+    position: absolute; left: 50%; bottom: 16px;
+    transform: translateX(-50%) translateY(74px);
+    z-index: 4; display: flex; align-items: center; gap: 10px;
+    padding: 11px 22px; border-radius: 999px;
+    background: rgba(8,8,11,.74); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    font-size: 14.5px; font-weight: 600;
+    opacity: 0; pointer-events: none;
+    transition: transform .35s cubic-bezier(.2,.9,.3,1.2), opacity .3s;
+  }
+  body.digging .pull-pill { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .pull-pill .spinner {
+    width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid rgba(255,255,255,.2); border-top-color: var(--dyn1);
+    animation: spinfast .7s linear infinite;
+  }
+  @keyframes spinfast { to { transform: rotate(360deg); } }
+  .pull-pill #pill-word { color: var(--dyn1); font-weight: 700; transition: color 1.6s ease; }
+  body.digging .player-wrap { animation: digglow 1.2s ease-in-out infinite; }
+  @keyframes digglow {
+    0%, 100% { box-shadow: 0 30px 90px -25px color-mix(in srgb, var(--dyn1) 45%, transparent); }
+    50% { box-shadow: 0 0 70px -8px var(--dyn1); }
+  }
+
+  /* transitions */
+  .swap { animation: rise .45s cubic-bezier(.2,.8,.2,1); }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  .toast {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(8px);
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(18px); padding: 11px 20px;
+    border-radius: 14px; font-size: 14px; opacity: 0;
+    transition: opacity .25s, transform .25s; pointer-events: none; z-index: 10;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div id="bg"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+<div id="grain"></div>
+
+<header>
+  <div class="logo">cratedigger</div>
+  <div class="header-right">
+    <div class="fuel" id="fuel" title="Discogs API budget — 25 requests/min without a token, 60 with. One dig costs a few requests; this estimates how many digs you have left this minute.">
+      <div class="fuel-bar"><i id="fuel-fill"></i></div>
+      <span>~<b id="fuel-rolls">6</b> rolls</span>
+    </div>
+    <div class="token-box">
+      <span class="hint" title="Optional. Raises the Discogs rate limit from 25 to 60 requests/min. Get one free at discogs.com → Settings → Developers.">Discogs token</span>
+      <input id="token" type="password" placeholder="paste token…" autocomplete="off">
+    </div>
+    <button id="btn-stream" title="Clean layout for streams / screen recordings">Stream mode <span class="key">V</span></button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- now playing -->
+  <div class="card" id="meta">
+    <div class="eyebrow"><span class="eq"><i></i><i></i><i></i><i></i></span> Now playing</div>
+    <h2 id="m-title">Hit Random to dig</h2>
+    <div id="m-artist-big">—</div>
+    <div class="chips" id="m-chips"></div>
+    <div class="meta-row"><span class="k">Release</span><span id="m-release">—</span></div>
+    <div class="meta-row"><span class="k">Label</span><span id="m-label">—</span></div>
+    <div class="meta-row"><span class="k">Owned</span><span id="m-owned">—</span></div>
+    <div class="meta-row"><span class="k">Links</span><span id="m-links">—</span></div>
+    <div class="vinyl"><div class="disc"><img id="cover" alt="Cover art"></div></div>
+  </div>
+
+  <!-- player -->
+  <div class="main">
+    <div class="player-wrap">
+      <div id="status"><div>Press <b>Random</b> (or hit D) to pull a track from the crates.</div></div>
+      <div id="yt"></div>
+      <div class="pull-pill"><span class="spinner"></span><span>digging <span id="pill-word">soul</span>…</span></div>
+    </div>
+
+    <!-- lower third for stream mode -->
+    <div class="card" id="lowerthird">
+      <div class="lt-disc"><img id="lt-cover" alt=""></div>
+      <div class="lt-text">
+        <div class="lt-title" id="lt-title"><span id="lt-title-inner">Nothing playing yet</span></div>
+        <div class="lt-sub" id="lt-sub">hit D to dig</div>
+      </div>
+      <div class="lt-bpm" id="lt-bpm">— BPM</div>
+    </div>
+
+    <div class="dock">
+      <button class="dock-btn" id="btn-filters" data-key="S" title="Filters">
+        <svg viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.2"/></svg>
+      </button>
+      <button class="dock-btn" id="btn-tempo" data-key="R" title="Tap tempo">
+        <svg viewBox="0 0 24 24"><polyline points="2 12 6 12 9 5 15 19 18 12 22 12"/></svg>
+      </button>
+      <button id="btn-random" class="dig" data-key="D" title="Dig a random track">DIG</button>
+      <button class="dock-btn" id="btn-play" data-key="␣" title="Play / pause">
+        <svg class="icon-play" viewBox="0 0 24 24"><polygon points="8 5.5 18.5 12 8 18.5"/></svg>
+        <svg class="icon-pause" viewBox="0 0 24 24"><rect x="7" y="5.5" width="3.4" height="13" rx="1"/><rect x="13.6" y="5.5" width="3.4" height="13" rx="1"/></svg>
+      </button>
+      <button class="dock-btn" id="btn-copy" data-key="C" title="Copy YouTube link">
+        <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      </button>
+      <button class="dock-btn" id="btn-download" data-key="Y" title="Download audio (MP3)">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 19h14"/></svg>
+      </button>
+      <button class="dock-btn" id="btn-fav" data-key="F" title="Favorite">
+        <svg viewBox="0 0 24 24"><polygon points="12 2.5 15.09 8.76 22 9.77 17 14.64 18.18 21.5 12 18.27 5.82 21.5 7 14.64 2 9.77 8.91 8.76"/></svg>
+      </button>
+    </div>
+
+    <div class="card open" id="filters">
+      <div class="filter-grid">
+        <div>
+          <label>Genre</label>
+          <div class="csel" id="csel-genre">
+            <button type="button" class="csel-trigger"><span class="csel-label">Any</span><svg class="csel-chev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
+            <div class="csel-menu">
+              <button type="button" class="csel-opt sel" data-value="">Any</button>
+              <button type="button" class="csel-opt" data-value="Funk / Soul">Funk / Soul</button>
+              <button type="button" class="csel-opt" data-value="Jazz">Jazz</button>
+              <button type="button" class="csel-opt" data-value="Electronic">Electronic</button>
+              <button type="button" class="csel-opt" data-value="Hip Hop">Hip Hop</button>
+              <button type="button" class="csel-opt" data-value="Rock">Rock</button>
+              <button type="button" class="csel-opt" data-value="Latin">Latin</button>
+              <button type="button" class="csel-opt" data-value="Reggae">Reggae</button>
+              <button type="button" class="csel-opt" data-value="Pop">Pop</button>
+              <button type="button" class="csel-opt" data-value="Blues">Blues</button>
+              <button type="button" class="csel-opt" data-value="Folk, World, & Country">Folk, World, &amp; Country</button>
+              <button type="button" class="csel-opt" data-value="Stage & Screen">Stage &amp; Screen</button>
+              <button type="button" class="csel-opt" data-value="Classical">Classical</button>
+              <button type="button" class="csel-opt" data-value="Non-Music">Non-Music</button>
+              <button type="button" class="csel-opt" data-value="Brass & Military">Brass &amp; Military</button>
+              <button type="button" class="csel-opt" data-value="Children's">Children's</button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label>Style</label>
+          <div class="cac" id="cac-style">
+            <input id="f-style" placeholder="Any" autocomplete="off">
+            <div class="cac-menu" id="cac-style-menu"></div>
+          </div>
+        </div>
+        <div>
+          <label>Years</label>
+          <div class="year-pair">
+            <input id="f-year-from" type="number" min="1900" max="2026" placeholder="from" value="1965">
+            <input id="f-year-to" type="number" min="1900" max="2026" placeholder="to" value="1985">
+          </div>
+        </div>
+        <div>
+          <label>Country</label>
+          <input id="f-country" placeholder="Any (e.g. US, Brazil…)">
+        </div>
+        <div>
+          <label>Format</label>
+          <div class="csel" id="csel-format">
+            <button type="button" class="csel-trigger"><span class="csel-label">Vinyl only</span><svg class="csel-chev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
+            <div class="csel-menu">
+              <button type="button" class="csel-opt sel" data-value="Vinyl">Vinyl only</button>
+              <button type="button" class="csel-opt" data-value="">Any format</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="bpm-box">
+      <div class="bpm-wrap">
+        <div id="bpm-pulse"></div>
+        <div id="bpm-val">— <small>BPM</small></div>
+      </div>
+      <button id="btn-tap" class="primary" style="flex:0 0 auto; padding:13px 36px;">TAP (R)</button>
+      <button id="btn-tap-reset">Reset</button>
+      <span class="hint">Tap along with the beat. Last 8 taps are averaged.</span>
+    </div>
+  </div>
+
+  <!-- sidebar -->
+  <div class="card side">
+    <div class="tabs">
+      <button id="tab-history" class="active">History</button>
+      <button id="tab-favs">Favorites</button>
+    </div>
+    <div id="list"><div class="empty">Nothing dug up yet.</div></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const API = 'https://api.discogs.com';
+
+/* ---------- state ---------- */
+let current = null;              // {artist,title,release,year,genre,style,country,label,videoId,watchUrl,discogsUrl,cover,releaseId}
+let history = [];                // newest first
+let favs = JSON.parse(localStorage.getItem('digger_favs') || '[]');
+let activeTab = 'history';
+let player = null, playerReady = false;
+let deadVideos = new Set();      // videoIds that failed to embed this session — never re-served
+let digging = false;
+
+$('token').value = localStorage.getItem('digger_token') || '';
+$('token').addEventListener('change', e => localStorage.setItem('digger_token', e.target.value.trim()));
+
+/* ---------- discogs api ---------- */
+function apiHeaders() {
+  const t = $('token').value.trim();
+  return t ? { 'Authorization': 'Discogs token=' + t } : {};
+}
+async function api(url) {
+  reqLog.push(Date.now());
+  reqTotal++;
+  updateFuel();
+  const res = await fetch(url, { headers: apiHeaders() });
+  if (res.status === 429) { rlBlockedUntil = Date.now() + 30000; updateFuel(); throw new Error('rate'); }
+  if (!res.ok) throw new Error('http ' + res.status);
+  return res.json();
+}
+
+/* ---------- rolls-left meter ----------
+   Discogs allows 25 req/min without a token, 60 with (rolling window).
+   We track our own requests; one dig costs several (search + release lookups). */
+let reqLog = [], rlBlockedUntil = 0, reqTotal = 0, digTotal = 0;
+function fuelInfo() {
+  const now = Date.now();
+  reqLog = reqLog.filter(t => now - t < 60000);
+  const limit = $('token').value.trim() ? 60 : 25;
+  const rem = now < rlBlockedUntil ? 0 : Math.max(0, limit - reqLog.length);
+  const perDig = digTotal ? Math.max(1, reqTotal / digTotal) : 4;
+  return { limit, rem, rolls: Math.floor(rem / perDig) };
+}
+function updateFuel() {
+  const f = fuelInfo();
+  $('fuel-fill').style.width = (f.rem / f.limit * 100) + '%';
+  $('fuel-rolls').textContent = f.rolls;
+  $('fuel').classList.toggle('low', f.rolls <= 1);
+}
+setInterval(updateFuel, 1000);
+updateFuel();
+
+function filterParams(year) {
+  const p = new URLSearchParams({ type: 'release', per_page: '25' });
+  const g = selValue('csel-genre'), s = $('f-style').value.trim(),
+        c = $('f-country').value.trim(), f = selValue('csel-format');
+  if (g) p.set('genre', g);
+  if (s) p.set('style', s);
+  if (c) p.set('country', c);
+  if (f) p.set('format', f);
+  if (year) p.set('year', year);
+  return p;
+}
+function randomYear() {
+  let a = parseInt($('f-year-from').value), b = parseInt($('f-year-to').value);
+  if (isNaN(a) && isNaN(b)) return null;
+  if (isNaN(a)) a = b; if (isNaN(b)) b = a;
+  if (a > b) [a, b] = [b, a];
+  return a + Math.floor(Math.random() * (b - a + 1));
+}
+
+/* pool of candidate releases for the current filter set */
+let pool = [], poolKey = '';
+// filterKey+year -> total pages. Persisted so the one-time page-count lookup for a
+// given filter+year amortizes across refills and reloads instead of re-probing.
+const countCache = JSON.parse(localStorage.getItem('digger_pagecount') || '{}');
+function saveCountCache() { try { localStorage.setItem('digger_pagecount', JSON.stringify(countCache)); } catch (e) {} }
+
+async function refillPool() {
+  const year = randomYear();
+  const params = filterParams(year);
+  const key = params.toString();
+  let pages = countCache[key];
+  let d;
+
+  if (pages === undefined) {
+    // First time we've seen this filter+year: fetch page 1, which serves as BOTH the
+    // page-count lookup and the pool — one request instead of a per_page=1 probe + a
+    // page fetch. Later refills for this same filter+year (count now cached) jump
+    // straight to a random, often-deep = more-obscure page.
+    d = await api(API + '/database/search?' + params + '&page=1');
+    const items = d.pagination.items;
+    pages = items ? Math.min(Math.ceil(items / 25), 400) : 0;   // Discogs caps paging at 10k items
+    countCache[key] = pages; saveCountCache();
+    if (pages === 0) return false;
+  } else {
+    if (pages === 0) return false;
+    const page = 1 + Math.floor(Math.random() * pages);
+    d = await api(API + '/database/search?' + params + '&page=' + page);
+  }
+  pool = d.results || [];
+  poolKey = baseKey();
+  return pool.length > 0;
+}
+function baseKey() { return filterParams(null).toString(); }
+
+/* ---------- dig ---------- */
+async function dig() {
+  if (digging) return;
+  digging = true;
+  digTotal++;
+  const btn = $('btn-random');
+  btn.disabled = true;
+  btn.classList.add('digging');
+  startDigFx();
+
+  try {
+    let emptyRefills = 0;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      // Refill only when the current page's releases are used up or the filters
+      // changed — no arbitrary every-N-rolls refresh (it burned extra requests and
+      // could fire mid-roll). Each refill already picks a fresh random year + page.
+      if (pool.length === 0 || poolKey !== baseKey()) {
+        const ok = await refillPool();
+        if (!ok && ++emptyRefills >= 3) { digMsg('No results for these filters — try loosening them.'); return; }
+        if (!ok) continue;
+      }
+      const item = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+      const rel = await api(item.resource_url);
+      const vids = (rel.videos || []).filter(v => v.embed && v.duration > 45 && v.duration < 900
+                                             && /youtube\.com|youtu\.be/.test(v.uri));
+      if (!vids.length) continue;
+      // try the release's videos in random order, skipping ones YouTube has deleted
+      vids.sort(() => Math.random() - .5);
+      let vid = null, videoId = null;
+      for (const v of vids) {
+        const id = (v.uri.match(/(?:v=|youtu\.be\/)([\w-]{11})/) || [])[1];
+        if (id && !deadVideos.has(id) && await videoAlive(id)) { vid = v; videoId = id; break; }
+      }
+      if (!vid) continue;
+
+      current = {
+        artist: rel.artists_sort || (rel.artists || []).map(a => a.name).join(', ') || '—',
+        title: vid.title,
+        release: rel.title,
+        year: rel.year || item.year || '—',
+        genre: (rel.genres || []).join(', ') || '—',
+        style: (rel.styles || []).join(', ') || '—',
+        genres: rel.genres || [],
+        styles: rel.styles || [],
+        country: rel.country || '—',
+        label: (rel.labels && rel.labels[0]) ? rel.labels[0].name + (rel.labels[0].catno ? ' — ' + rel.labels[0].catno : '') : '—',
+        videoId,
+        watchUrl: 'https://www.youtube.com/watch?v=' + videoId,
+        discogsUrl: rel.uri,
+        cover: item.cover_image && !item.cover_image.includes('spacer.gif') ? item.cover_image : '',
+        releaseId: rel.id,
+        tier: rarityOf(rel),
+        have: (rel.community || {}).have || 0,
+        want: (rel.community || {}).want || 0
+      };
+      play(current);
+      pushHistory(current);
+      renderMeta(current);
+      renderList();
+      updateFavBtn();
+      return;
+    }
+    digMsg('Couldn\'t find a playable video after several tries — hit Random again.');
+  } catch (e) {
+    if (e.message === 'rate') digMsg('Discogs rate limit hit — wait a minute, or paste a free Discogs token (top right) to raise it.');
+    else digMsg('Something went wrong talking to Discogs (' + e.message + '). Try again.');
+  } finally {
+    digging = false;
+    btn.disabled = false;
+    btn.classList.remove('digging');
+    stopDigFx();
+  }
+}
+
+/* While a track is already playing, digging must not interrupt it: show the
+   pill + player glow instead of the full-screen status overlay, and route
+   error messages through toasts. The overlay is only for the empty player. */
+let pillTimer = null;
+function startDigFx() {
+  if (!current) { showDigging(); return; }
+  document.body.classList.add('digging');
+  let i = 0;
+  clearInterval(pillTimer);
+  pillTimer = setInterval(() => {
+    $('pill-word').textContent = DIG_WORDS[++i % DIG_WORDS.length];
+  }, 130);
+}
+function stopDigFx() {
+  document.body.classList.remove('digging');
+  clearInterval(pillTimer);
+}
+function digMsg(msg) {
+  if (current) toast(msg);
+  else setStatus(msg);
+}
+
+/* ---------- rarity from Discogs collection stats ----------
+   score = want / have — how much more the record is wanted than owned */
+function rarityOf(rel) {
+  const c = rel.community || {};
+  const have = c.have || 0, want = c.want || 0;
+  if (!have && !want) return 'common';
+  const score = want / (have + 1);
+  if (score >= 1.2 || (have < 30 && want > 20)) return 'legendary';
+  if (score >= 0.7) return 'epic';
+  if (score >= 0.35) return 'rare';
+  return 'common';
+}
+
+/* Dead YouTube videos serve a 120x90 placeholder thumbnail; live ones are 480x360. */
+function videoAlive(id) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const timer = setTimeout(() => resolve(true), 3000);
+    img.onload = () => { clearTimeout(timer); resolve(img.naturalWidth > 120); };
+    img.onerror = () => { clearTimeout(timer); resolve(false); };
+    img.src = 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg';
+  });
+}
+
+/* ---------- player ---------- */
+let digTimer = null;
+const DIG_WORDS = ['soul', 'funk', 'jazz', 'disco', 'boogie', 'psych', 'breaks', 'dub', 'latin', 'afrobeat', 'gospel', 'library'];
+function setStatus(msg) {
+  clearInterval(digTimer);
+  $('status').innerHTML = msg;
+  $('status').style.display = msg ? 'flex' : 'none';
+}
+function showDigging() {
+  setStatus('<div class="dig-line">digging <span id="dig-word">soul</span>…</div><div>flipping through the crates</div>');
+  let i = 0;
+  digTimer = setInterval(() => {
+    const el = $('dig-word');
+    if (el) el.textContent = DIG_WORDS[++i % DIG_WORDS.length];
+  }, 130);
+}
+
+function play(track) {
+  setStatus('');
+  updateMediaSession(track);
+  if (playerReady) {
+    player.loadVideoById(track.videoId);
+  } else if (window.YT && YT.Player) {
+    player = new YT.Player('yt', {
+      videoId: track.videoId,
+      playerVars: { autoplay: 1, rel: 0 },
+      events: {
+        onReady: () => { playerReady = true; },
+        onError: onPlayerError
+      }
+    });
+  } else {
+    setStatus('YouTube player still loading — one sec…');
+    setTimeout(() => play(track), 600);
+  }
+}
+function onPlayerError() {
+  // Embed disabled / region-blocked / deleted after the fact — thumbnail-based
+  // videoAlive() can't catch these (the video still exists, it just won't embed).
+  // No auto-redig: that would silently burn through the Discogs rate limit on
+  // every bad video. Remember it so this session never re-serves it, and let
+  // the person decide when to spend another dig.
+  if (current) deadVideos.add(current.videoId);
+  digMsg('That video won\'t embed here — hit Dig for another (D)');
+}
+const ytScript = document.createElement('script');
+ytScript.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(ytScript);
+
+/* sync the "playing" body class (drives vinyl spin + equalizer) with the player */
+setInterval(() => {
+  const s = playerReady && player.getPlayerState ? player.getPlayerState() : -1;
+  document.body.classList.toggle('playing', s === 1);
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = s === 1 ? 'playing' : 'paused';
+  if (silentAudio) {
+    if (s === 1) silentAudio.play().catch(() => {});
+    else if (s === 2 || s === 0) silentAudio.pause();
+  }
+}, 800);
+
+/* ---------- media session: lock screen / notification controls ---------- */
+/* A looping silent <audio> in the top frame claims the OS media session, so the
+   system controls show our metadata and route play/pause/next/prev to us
+   instead of to the YouTube iframe. */
+let silentAudio = null;
+function makeSilentWav(seconds) {
+  const rate = 8000, n = rate * seconds;
+  const buf = new ArrayBuffer(44 + n * 2);
+  const v = new DataView(buf);
+  const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE');
+  w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, n * 2, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+function updateMediaSession(t) {
+  if (!('mediaSession' in navigator)) return;
+  if (!silentAudio) {
+    silentAudio = new Audio(makeSilentWav(1));
+    silentAudio.loop = true;
+  }
+  silentAudio.play().catch(() => {});
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: t.title,
+    artist: t.artist,
+    album: t.release,
+    artwork: [{ src: t.cover || ('https://i.ytimg.com/vi/' + t.videoId + '/hqdefault.jpg') }]
+  });
+  navigator.mediaSession.setActionHandler('play', () => { if (playerReady) player.playVideo(); silentAudio.play().catch(() => {}); });
+  navigator.mediaSession.setActionHandler('pause', () => { if (playerReady) player.pauseVideo(); silentAudio.pause(); });
+  navigator.mediaSession.setActionHandler('nexttrack', () => dig());
+  navigator.mediaSession.setActionHandler('previoustrack', playPrev);
+}
+function playPrev() {
+  if (history.length < 2) return;
+  const t = history[1];
+  current = t;
+  play(t); pushHistory(t); renderMeta(t); renderList(); updateFavBtn();
+}
+
+/* ---------- dynamic accent color from the video thumbnail ---------- */
+function extractColors(videoId) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 48; c.height = 27;
+      const x = c.getContext('2d');
+      x.drawImage(img, 0, 0, 48, 27);
+      const d = x.getImageData(0, 0, 48, 27).data;
+      let best = null, bestScore = -1;
+      for (let i = 0; i < d.length; i += 16) {
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        const score = (mx ? (mx - mn) / mx : 0) * mx;   // saturation * brightness
+        if (score > bestScore) { bestScore = score; best = [r, g, b]; }
+      }
+      setAccent(bestScore > 40 ? best : null);
+    } catch (e) { setAccent(null); }
+  };
+  img.onerror = () => setAccent(null);
+  img.src = 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg';
+}
+function rgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const dl = mx - mn;
+  const s = l > .5 ? dl / (2 - mx - mn) : dl / (mx + mn);
+  let h = mx === r ? (g - b) / dl + (g < b ? 6 : 0) : mx === g ? (b - r) / dl + 2 : (r - g) / dl + 4;
+  return [h * 60, s, l];
+}
+function setAccent(rgb) {
+  const root = document.documentElement.style;
+  if (!rgb) { root.removeProperty('--dyn1'); root.removeProperty('--dyn2'); return; }
+  const [r, g, b] = rgb;
+  const [h, s, l] = rgb2hsl(r, g, b);
+  // keep it vivid enough to glow on a dark bg
+  root.setProperty('--dyn1', `hsl(${Math.round(h)} ${Math.round(Math.max(s, .5) * 100)}% ${Math.round(Math.min(Math.max(l, .45), .62) * 100)}%)`);
+  root.setProperty('--dyn2', `hsl(${Math.round((h + 45) % 360)} ${Math.round(Math.max(s, .5) * 100)}% 55%)`);
+}
+
+/* ---------- metadata ---------- */
+function chip(text, hot) {
+  const el = document.createElement('span');
+  el.className = 'chip' + (hot ? ' hot' : '');
+  el.textContent = text;
+  return el;
+}
+function renderMeta(t) {
+  $('m-title').textContent = t.title;
+  $('m-artist-big').textContent = t.artist;
+  const chips = $('m-chips');
+  chips.innerHTML = '';
+  if (t.tier) {
+    const tc = chip(t.tier);
+    tc.className = 'chip tier tier-' + t.tier;
+    chips.appendChild(tc);
+  }
+  if (t.year !== '—') chips.appendChild(chip(t.year, true));
+  (t.genres || []).forEach(g => chips.appendChild(chip(g)));
+  (t.styles || []).forEach(s => chips.appendChild(chip(s)));
+  if (t.country !== '—') chips.appendChild(chip(t.country));
+  $('m-release').textContent = t.release;
+  $('m-label').textContent = t.label;
+  $('m-owned').textContent = (t.have || t.want)
+    ? t.have.toLocaleString() + ' diggers · ' + t.want.toLocaleString() + ' want it'
+    : '—';
+  $('m-links').innerHTML =
+    '<a href="' + t.discogsUrl + '" target="_blank">Discogs</a> · ' +
+    '<a href="' + t.watchUrl + '" target="_blank">YouTube</a>';
+  const coverSrc = t.cover || ('https://i.ytimg.com/vi/' + t.videoId + '/hqdefault.jpg');
+  $('cover').src = coverSrc;
+  $('lt-cover').src = coverSrc;
+  updateLowerThird(t);
+  extractColors(t.videoId);
+  // re-trigger the enter animation
+  ['meta', 'lowerthird'].forEach(id => {
+    const el = $(id); el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap');
+  });
+}
+function updateLowerThird(t) {
+  const inner = $('lt-title-inner');
+  const title = t.artist + ' — ' + t.release;
+  const wrap = $('lt-title');
+  wrap.classList.remove('scroll');
+  inner.textContent = title;
+  $('lt-sub').textContent = [(t.tier || '').toUpperCase(), t.year, t.label, t.genre].filter(v => v && v !== '—').join(' · ');
+  requestAnimationFrame(() => {
+    if (inner.scrollWidth > wrap.clientWidth) {
+      inner.textContent = title + '   ' + title;
+      wrap.style.setProperty('--marquee', Math.max(10, title.length / 4) + 's');
+      wrap.classList.add('scroll');
+    }
+  });
+}
+
+/* ---------- history & favorites ---------- */
+function pushHistory(t) {
+  history = history.filter(h => h.videoId !== t.videoId);
+  history.unshift(t);
+  if (history.length > 50) history.pop();
+}
+function isFaved(t) { return t && favs.some(f => f.videoId === t.videoId); }
+function toggleFav() {
+  if (!current) return;
+  if (isFaved(current)) favs = favs.filter(f => f.videoId !== current.videoId);
+  else favs.unshift(current);
+  localStorage.setItem('digger_favs', JSON.stringify(favs));
+  updateFavBtn(); renderList();
+  if (isFaved(current)) {
+    const b = $('btn-fav');
+    b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
+  }
+  toast(isFaved(current) ? 'Added to favorites' : 'Removed from favorites');
+}
+function updateFavBtn() {
+  $('btn-fav').classList.toggle('faved', isFaved(current));
+}
+function renderList() {
+  const items = activeTab === 'history' ? history : favs;
+  const list = $('list');
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">' + (activeTab === 'history' ? 'Nothing dug up yet.' : 'No favorites yet — hit ☆ on a track you like.') + '</div>';
+    return;
+  }
+  list.innerHTML = '';
+  items.forEach(t => {
+    const el = document.createElement('div');
+    el.className = 'track' + (current && t.videoId === current.videoId ? ' now' : '');
+    const img = document.createElement('img');
+    img.src = t.cover || ('https://i.ytimg.com/vi/' + t.videoId + '/default.jpg');
+    img.loading = 'lazy';
+    const txt = document.createElement('div');
+    const l1 = document.createElement('div'); l1.className = 't'; l1.textContent = t.title;
+    const l2 = document.createElement('div'); l2.className = 'a'; l2.textContent = t.artist + ' · ' + t.year;
+    txt.append(l1, l2);
+    el.append(img, txt);
+    el.onclick = () => { current = t; play(t); pushHistory(t); renderMeta(t); renderList(); updateFavBtn(); };
+    list.appendChild(el);
+  });
+}
+
+/* ---------- tap tempo ---------- */
+let taps = [];
+function tap() {
+  const now = performance.now();
+  if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
+  taps.push(now);
+  if (taps.length > 1) {
+    const iv = [];
+    for (let i = 1; i < taps.length; i++) iv.push(taps[i] - taps[i - 1]);
+    const recent = iv.slice(-8);
+    const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+    const bpm = Math.round(60000 / avg);
+    $('bpm-val').innerHTML = bpm + ' <small>BPM</small>';
+    $('lt-bpm').textContent = bpm + ' BPM';
+    const pulse = $('bpm-pulse');
+    pulse.style.setProperty('--beat', (60 / bpm) + 's');
+    pulse.classList.add('beat');
+  }
+  if (!document.body.classList.contains('stream')) $('bpm-box').classList.add('open');
+}
+$('btn-tap').onclick = tap;
+$('btn-tap-reset').onclick = () => {
+  taps = [];
+  $('bpm-val').innerHTML = '— <small>BPM</small>';
+  $('lt-bpm').textContent = '— BPM';
+  $('bpm-pulse').classList.remove('beat');
+};
+
+/* ---------- ui wiring ---------- */
+function togglePlay() {
+  if (!playerReady || !current) return;
+  if (player.getPlayerState() === 1) {
+    player.pauseVideo();
+    document.body.classList.remove('playing');
+  } else {
+    player.playVideo();
+    document.body.classList.add('playing');
+  }
+}
+$('btn-play').onclick = togglePlay;
+$('btn-random').onclick = dig;
+$('btn-filters').onclick = () => $('filters').classList.toggle('open');
+$('btn-tempo').onclick = () => $('bpm-box').classList.toggle('open');
+$('btn-fav').onclick = toggleFav;
+$('btn-copy').onclick = () => {
+  if (!current) return;
+  navigator.clipboard.writeText(current.watchUrl).then(() => toast('YouTube link copied'));
+};
+$('btn-download').onclick = downloadAudio;
+async function downloadAudio() {
+  if (!current || $('btn-download').classList.contains('loading')) return;
+  const btn = $('btn-download');
+  btn.classList.add('loading');
+  toast('Downloading audio…');
+  try {
+    const title = current.artist + ' - ' + current.release;
+    const res = await fetch('/download?url=' + encodeURIComponent(current.watchUrl) + '&title=' + encodeURIComponent(title));
+    if (!res.ok) {
+      let msg = 'Download failed.';
+      try { msg = (await res.json()).error || msg; } catch (e) {}
+      toast(msg);
+      return;
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+    const filename = match ? decodeURIComponent(match[1]) : title + '.mp3';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+    toast('Downloaded ' + filename);
+  } catch (e) {
+    toast('Download failed — is the app running via server.py (not a plain static server)?');
+  } finally {
+    btn.classList.remove('loading');
+  }
+}
+$('btn-stream').onclick = toggleStream;
+function toggleStream() {
+  const on = document.body.classList.toggle('stream');
+  toast(on ? 'Stream mode on — V to exit' : 'Stream mode off');
+}
+$('tab-history').onclick = () => switchTab('history');
+$('tab-favs').onclick = () => switchTab('favs');
+function switchTab(t) {
+  activeTab = t;
+  $('tab-history').classList.toggle('active', t === 'history');
+  $('tab-favs').classList.toggle('active', t === 'favs');
+  renderList();
+}
+
+let toastTimer;
+function toast(msg) {
+  $('toast').textContent = msg;
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 1800);
+}
+
+/* ---------- custom dropdowns + style autocomplete ----------
+   Styles are Discogs' real controlled vocabulary, grouped under the genre they
+   belong to, so the Style suggestions follow the picked Genre. The field is still
+   free-text — you can type any Discogs style even if it's not suggested. */
+const GENRE_STYLES = {
+  'Funk / Soul': ['Afrobeat', 'Bayou Funk', 'Disco', 'Free Funk', 'Funk', 'Gogo', 'Gospel', 'Neo Soul', 'New Jack Swing', 'P.Funk', 'Psychedelic', 'Rhythm & Blues', 'Soul', 'Swingbeat'],
+  'Jazz': ['Afro-Cuban Jazz', 'Afrobeat', 'Big Band', 'Bop', 'Contemporary Jazz', 'Cool Jazz', 'Dixieland', 'Easy Listening', 'Free Improvisation', 'Free Jazz', 'Fusion', 'Gypsy Jazz', 'Hard Bop', 'Jazz-Funk', 'Jazz-Rock', 'Latin Jazz', 'Modal', 'Post Bop', 'Ragtime', 'Smooth Jazz', 'Soul-Jazz', 'Space-Age', 'Swing'],
+  'Hip Hop': ['Bass Music', 'Bounce', 'Britcore', 'Conscious', 'Crunk', 'Cut-up/DJ', 'DJ Battle Tool', 'Electro', 'Gangsta', 'Go-Go', 'Grime', 'Horrorcore', 'Hyphy', 'Instrumental', 'Kwaito', 'Pop Rap', 'Ragga Hip Hop', 'RnB / Swing', 'Screw', 'Thug Rap', 'Trip Hop'],
+  'Electronic': ['Abstract', 'Acid', 'Acid House', 'Acid Jazz', 'Ambient', 'Big Beat', 'Breakbeat', 'Breakcore', 'Breaks', 'Broken Beat', 'Chiptune', 'Dark Ambient', 'Darkwave', 'Deep House', 'Disco', 'Downtempo', 'Drone', 'Drum n Bass', 'Dub', 'Dub Techno', 'Dubstep', 'EBM', 'Electro', 'Euro House', 'Experimental', 'Freestyle', 'Future Jazz', 'Gabber', 'Garage House', 'Ghetto', 'Glitch', 'Goa Trance', 'Grime', 'Happy Hardcore', 'Hard House', 'Hard Trance', 'Hardcore', 'Hardstyle', 'Hi NRG', 'Hip Hop', 'Hip House', 'House', 'IDM', 'Illbient', 'Industrial', 'Italo-Disco', 'Italodance', 'Jazzdance', 'Jumpstyle', 'Jungle', 'Krautrock', 'Latin', 'Leftfield', 'Makina', 'Minimal', 'Modern Classical', 'Musique Concrète', 'Neo Folk', 'New Age', 'New Beat', 'New Wave', 'Noise', 'Power Electronics', 'Progressive House', 'Progressive Trance', 'Psy-Trance', 'Rhythmic Noise', 'Speed Garage', 'Speedcore', 'Synth-pop', 'Tech House', 'Techno', 'Trance', 'Tribal', 'Tribal House', 'Trip Hop', 'UK Garage'],
+  'Latin': ['Afro Cuban', 'Bachata', 'Batucada', 'Beguine', 'Bolero', 'Boogaloo', 'Bossa Nova', 'Cha-Cha', 'Charanga', 'Compas', 'Conjunto', 'Corrido', 'Cuatro', 'Cubano', 'Cumbia', 'Danzon', 'Descarga', 'Fado', 'Flamenco', 'Forro', 'Guaguancó', 'Jibaro', 'Joropo', 'Lambada', 'Llano', 'MPB', 'Mambo', 'Mariachi', 'Marimba', 'Merengue', 'Norteño', 'Nuevo Cancion', 'Nuevo Trova', 'Pachanga', 'Plena', 'Quechua', 'Ranchera', 'Reggaton', 'Rumba', 'Salsa', 'Samba', 'Son', 'Sonero', 'Tango', 'Tejano', 'Trimba', 'Trova', 'Vallenato'],
+  'Reggae': ['Calypso', 'Dancehall', 'Dub', 'Dub Poetry', 'Junkanoo', 'Lovers Rock', 'Mento', 'Ragga', 'Rapso', 'Reggae', 'Reggae Gospel', 'Reggae-Pop', 'Rocksteady', 'Roots Reggae', 'Ska', 'Soca', 'Steel Band'],
+  'Rock': ['Acoustic', 'Alternative Rock', 'Arena Rock', 'Art Rock', 'Avantgarde', 'Black Metal', 'Blues Rock', 'Brit Pop', 'Classic Rock', 'Country Rock', 'Death Metal', 'Doo Wop', 'Doom Metal', 'Emo', 'Ethereal', 'Experimental', 'Folk Rock', 'Funk Metal', 'Garage Rock', 'Glam', 'Original Glam', 'US Glam / Hair Metal', 'Goth Rock', 'Grindcore', 'Grunge', 'Hard Rock', 'Hardcore', 'Heavy Metal', 'Indie Rock', 'Industrial', 'Lo-Fi', 'Lounge', 'Math Rock', 'Mod', 'Neofolk', 'New Wave', 'Noise', 'Nu Metal', 'Oi', 'Parody', 'Pop Rock', 'Post Rock', 'Power Pop', 'Prog Rock', 'Psychedelic Rock', 'Psychobilly', 'Punk', 'Rock & Roll', 'Rockabilly', 'Rocksteady', 'Shoegazer', 'Ska', 'Skiffle', 'Soft Rock', 'Southern Rock', 'Space Rock', 'Speed Metal', 'Stoner Rock', 'Surf', 'Symphonic Rock', 'Thrash', 'Viking Metal'],
+  'Blues': ['Chicago Blues', 'Country Blues', 'Delta Blues', 'East Coast Blues', 'Electric Blues', 'Harmonica Blues', 'Hill Country Blues', 'Jump Blues', 'Louisiana Blues', 'Modern Electric Blues', 'Piano Blues', 'Piedmont Blues', 'Texas Blues'],
+  'Pop': ['Ballad', 'Bollywood', 'Chanson', 'Enka', 'Europop', 'J-Pop', 'Karaoke', 'Music Hall', 'Novelty', 'Parody', 'Schlager', 'Vocal'],
+  'Folk, World, & Country': ['African', 'Aboriginal', 'Andalusian Classical', 'Bengali Music', 'Bhangra', 'Bluegrass', 'Cajun', 'Canzone Napoletana', 'Cape Verdean', 'Catalan Music', 'Celtic', 'Country', 'Éntekhno', 'Fado', 'Flamenco', 'Folk', 'Funaná', 'Gamelan', 'Gospel', 'Highlife', 'Hillbilly', 'Hindustani', 'Honky Tonk', 'Indian Classical', 'Klezmer', 'Laïkó', 'Luk Thung', 'Mbalax', 'Min\'yō', 'Morna', 'Ottoman Classical', 'Pacific', 'Persian Classical', 'Polka', 'Qawwali', 'Raï', 'Ranchera', 'Rebetiko', 'Rune Singing', 'Sea Shanties', 'Soukous', 'Volksmusik', 'Zouk', 'Zydeco'],
+  'Stage & Screen': ['Musical', 'Score', 'Soundtrack', 'Theme'],
+  'Classical': ['Baroque', 'Classical', 'Contemporary', 'Early', 'Medieval', 'Modern', 'Neo-Classical', 'Neo-Romantic', 'Post-Modern', 'Renaissance', 'Romantic'],
+  'Non-Music': ['Audiobook', 'Comedy', 'Dialogue', 'Education', 'Field Recording', 'Interview', 'Monologue', 'Movie Effects', 'Poetry', 'Political', 'Promotional', 'Public Service Announcement', 'Radioplay', 'Religious', 'Sermon', 'Special Effects', 'Speech', 'Spoken Word', 'Technical', 'Therapy'],
+  'Brass & Military': ['Brass Band', 'Marches', 'Military', 'Pipe & Drum'],
+  'Children\'s': ['Educational', 'Nursery Rhymes', 'Story'],
+};
+const ANY_STYLES = ['Aboriginal', 'Abstract', 'Acid', 'Acid House', 'Acid Jazz', 'Acoustic', 'African', 'Afro Cuban', 'Afro-Cuban Jazz', 'Afrobeat', 'Alternative Rock', 'Ambient', 'Andalusian Classical', 'Arena Rock', 'Art Rock', 'Audiobook', 'Avantgarde', 'Bachata', 'Ballad', 'Baroque', 'Bass Music', 'Batucada', 'Bayou Funk', 'Beguine', 'Bengali Music', 'Bhangra', 'Big Band', 'Big Beat', 'Black Metal', 'Bluegrass', 'Blues Rock', 'Bolero', 'Bollywood', 'Boogaloo', 'Bop', 'Bossa Nova', 'Bounce', 'Brass Band', 'Breakbeat', 'Breakcore', 'Breaks', 'Brit Pop', 'Britcore', 'Broken Beat', 'Cajun', 'Calypso', 'Canzone Napoletana', 'Cape Verdean', 'Catalan Music', 'Celtic', 'Cha-Cha', 'Chanson', 'Charanga', 'Chicago Blues', 'Chiptune', 'Classic Rock', 'Classical', 'Comedy', 'Compas', 'Conjunto', 'Conscious', 'Contemporary', 'Contemporary Jazz', 'Cool Jazz', 'Corrido', 'Country', 'Country Blues', 'Country Rock', 'Crunk', 'Cuatro', 'Cubano', 'Cumbia', 'Cut-up/DJ', 'Dancehall', 'Danzon', 'Dark Ambient', 'Darkwave', 'Death Metal', 'Deep House', 'Delta Blues', 'Descarga', 'Dialogue', 'Disco', 'Dixieland', 'DJ Battle Tool', 'Doo Wop', 'Doom Metal', 'Downtempo', 'Drone', 'Drum n Bass', 'Dub', 'Dub Poetry', 'Dub Techno', 'Dubstep', 'Early', 'East Coast Blues', 'Easy Listening', 'EBM', 'Education', 'Educational', 'Electric Blues', 'Electro', 'Emo', 'Enka', 'Ethereal', 'Euro House', 'Europop', 'Experimental', 'Fado', 'Field Recording', 'Flamenco', 'Folk', 'Folk Rock', 'Forro', 'Free Funk', 'Free Improvisation', 'Free Jazz', 'Freestyle', 'Funaná', 'Funk', 'Funk Metal', 'Fusion', 'Future Jazz', 'Gabber', 'Gamelan', 'Gangsta', 'Garage House', 'Garage Rock', 'Ghetto', 'Glam', 'Glitch', 'Go-Go', 'Goa Trance', 'Gogo', 'Gospel', 'Goth Rock', 'Grime', 'Grindcore', 'Grunge', 'Guaguancó', 'Gypsy Jazz', 'Happy Hardcore', 'Hard Bop', 'Hard House', 'Hard Rock', 'Hard Trance', 'Hardcore', 'Hardstyle', 'Harmonica Blues', 'Heavy Metal', 'Hi NRG', 'Highlife', 'Hill Country Blues', 'Hillbilly', 'Hindustani', 'Hip Hop', 'Hip House', 'Honky Tonk', 'Horrorcore', 'House', 'Hyphy', 'IDM', 'Illbient', 'Indian Classical', 'Indie Rock', 'Industrial', 'Instrumental', 'Interview', 'Italo-Disco', 'Italodance', 'J-Pop', 'Jazz-Funk', 'Jazz-Rock', 'Jazzdance', 'Jibaro', 'Joropo', 'Jump Blues', 'Jumpstyle', 'Jungle', 'Junkanoo', 'Karaoke', 'Klezmer', 'Krautrock', 'Kwaito', 'Lambada', 'Latin', 'Latin Jazz', 'Laïkó', 'Leftfield', 'Llano', 'Lo-Fi', 'Louisiana Blues', 'Lounge', 'Lovers Rock', 'Luk Thung', 'Makina', 'Mambo', 'Marches', 'Mariachi', 'Marimba', 'Math Rock', 'Mbalax', 'Medieval', 'Mento', 'Merengue', 'Military', 'Min\'yō', 'Minimal', 'Mod', 'Modal', 'Modern', 'Modern Classical', 'Modern Electric Blues', 'Monologue', 'Morna', 'Movie Effects', 'MPB', 'Music Hall', 'Musical', 'Musique Concrète', 'Neo Folk', 'Neo Soul', 'Neo-Classical', 'Neo-Romantic', 'Neofolk', 'New Age', 'New Beat', 'New Jack Swing', 'New Wave', 'Noise', 'Norteño', 'Novelty', 'Nu Metal', 'Nuevo Cancion', 'Nuevo Trova', 'Nursery Rhymes', 'Oi', 'Original Glam', 'Ottoman Classical', 'P.Funk', 'Pachanga', 'Pacific', 'Parody', 'Persian Classical', 'Piano Blues', 'Piedmont Blues', 'Pipe & Drum', 'Plena', 'Poetry', 'Political', 'Polka', 'Pop Rap', 'Pop Rock', 'Post Bop', 'Post Rock', 'Post-Modern', 'Power Electronics', 'Power Pop', 'Prog Rock', 'Progressive House', 'Progressive Trance', 'Promotional', 'Psy-Trance', 'Psychedelic', 'Psychedelic Rock', 'Psychobilly', 'Public Service Announcement', 'Punk', 'Qawwali', 'Quechua', 'Radioplay', 'Ragga', 'Ragga Hip Hop', 'Ragtime', 'Ranchera', 'Rapso', 'Raï', 'Rebetiko', 'Reggae', 'Reggae Gospel', 'Reggae-Pop', 'Reggaton', 'Religious', 'Renaissance', 'Rhythm & Blues', 'Rhythmic Noise', 'RnB / Swing', 'Rock & Roll', 'Rockabilly', 'Rocksteady', 'Romantic', 'Roots Reggae', 'Rumba', 'Rune Singing', 'Salsa', 'Samba', 'Schlager', 'Score', 'Screw', 'Sea Shanties', 'Sermon', 'Shoegazer', 'Ska', 'Skiffle', 'Smooth Jazz', 'Soca', 'Soft Rock', 'Son', 'Sonero', 'Soukous', 'Soul', 'Soul-Jazz', 'Soundtrack', 'Southern Rock', 'Space Rock', 'Space-Age', 'Special Effects', 'Speech', 'Speed Garage', 'Speed Metal', 'Speedcore', 'Spoken Word', 'Steel Band', 'Stoner Rock', 'Story', 'Surf', 'Swing', 'Swingbeat', 'Symphonic Rock', 'Synth-pop', 'Tango', 'Tech House', 'Technical', 'Techno', 'Tejano', 'Texas Blues', 'Theme', 'Therapy', 'Thrash', 'Thug Rap', 'Trance', 'Tribal', 'Tribal House', 'Trimba', 'Trip Hop', 'Trova', 'UK Garage', 'US Glam / Hair Metal', 'Vallenato', 'Viking Metal', 'Vocal', 'Volksmusik', 'Zouk', 'Zydeco', 'Éntekhno'];
+function styleOptionsForGenre() {
+  return GENRE_STYLES[selValue('csel-genre')] || ANY_STYLES;
+}
+
+function selValue(id) {
+  const sel = $(id).querySelector('.csel-opt.sel');
+  return sel ? sel.dataset.value : '';
+}
+function closeSelects(except) {
+  document.querySelectorAll('.csel.open').forEach(c => { if (c !== except) c.classList.remove('open'); });
+}
+function initSelect(id, onChange) {
+  const csel = $(id);
+  const trigger = csel.querySelector('.csel-trigger');
+  const label = csel.querySelector('.csel-label');
+  trigger.addEventListener('click', () => {
+    const willOpen = !csel.classList.contains('open');
+    closeSelects(csel);
+    $('cac-style-menu').classList.remove('open');
+    csel.classList.toggle('open', willOpen);
+  });
+  csel.querySelectorAll('.csel-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      csel.querySelectorAll('.csel-opt').forEach(o => o.classList.remove('sel'));
+      opt.classList.add('sel');
+      label.textContent = opt.textContent;
+      csel.classList.remove('open');
+      if (onChange) onChange(opt.dataset.value);
+    });
+  });
+}
+initSelect('csel-genre', () => {
+  // Styles are now genre-specific — drop a leftover style that doesn't belong to
+  // the newly picked genre, and hint the field with a relevant example.
+  const style = $('f-style');
+  const valid = styleOptionsForGenre().some(s => s.toLowerCase() === style.value.trim().toLowerCase());
+  if (style.value && !valid) style.value = '';
+  style.placeholder = selValue('csel-genre') ? 'e.g. ' + styleOptionsForGenre()[0] : 'Any';
+  $('cac-style-menu').classList.remove('open');
+});
+initSelect('csel-format');
+
+(function initStyleAutocomplete() {
+  const input = $('f-style'), menu = $('cac-style-menu');
+  let hi = -1, opts = [];
+  function setHi(i) {
+    hi = i;
+    opts.forEach((o, idx) => o.classList.toggle('hi', idx === i));
+    if (opts[i]) opts[i].scrollIntoView({ block: 'nearest' });
+  }
+  function pick(val) { input.value = val; menu.classList.remove('open'); }
+  function open() {
+    closeSelects(null);
+    const q = input.value.trim().toLowerCase();
+    const pool = styleOptionsForGenre();
+    let matches = q ? pool.filter(s => s.toLowerCase().includes(q)) : pool.slice();
+    // rank styles that *start with* the query above mid-word matches
+    if (q) matches.sort((a, b) => (b.toLowerCase().startsWith(q)) - (a.toLowerCase().startsWith(q)));
+    if (!matches.length) {
+      menu.innerHTML = '<div class="cac-empty">No matching style — it\'ll still search as typed</div>';
+      opts = []; hi = -1; menu.classList.add('open'); return;
+    }
+    const CAP = 60;
+    const extra = matches.length - CAP;
+    const list = matches.slice(0, CAP);
+    menu.innerHTML = list.map(s => {
+      const i = q ? s.toLowerCase().indexOf(q) : -1;
+      const inner = i >= 0
+        ? s.slice(0, i) + '<mark>' + s.slice(i, i + q.length) + '</mark>' + s.slice(i + q.length)
+        : s;
+      return '<button type="button" class="cac-opt" data-value="' + s + '">' + inner + '</button>';
+    }).join('') + (extra > 0 ? '<div class="cac-empty">+' + extra + ' more — keep typing to narrow</div>' : '');
+    opts = [...menu.querySelectorAll('.cac-opt')];
+    setHi(-1);
+    opts.forEach((o, idx) => {
+      o.addEventListener('mousedown', e => { e.preventDefault(); pick(o.dataset.value); });
+      o.addEventListener('mousemove', () => setHi(idx));
+    });
+    menu.classList.add('open');
+  }
+  input.addEventListener('focus', open);
+  input.addEventListener('input', open);
+  input.addEventListener('keydown', e => {
+    if (!menu.classList.contains('open')) { if (e.key === 'ArrowDown') open(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHi(Math.min(hi + 1, opts.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(Math.max(hi - 1, 0)); }
+    else if (e.key === 'Enter' && hi >= 0 && opts[hi]) { e.preventDefault(); pick(opts[hi].dataset.value); }
+    else if (e.key === 'Escape') menu.classList.remove('open');
+  });
+})();
+
+/* click outside closes any open dropdown/autocomplete */
+document.addEventListener('click', e => {
+  if (!e.target.closest('.csel')) closeSelects(null);
+  if (!e.target.closest('.cac')) $('cac-style-menu').classList.remove('open');
+});
+
+document.addEventListener('keydown', e => {
+  if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.closest('.csel')) return;
+  const k = e.key.toLowerCase();
+  if (k === ' ') { e.preventDefault(); togglePlay(); }
+  else if (k === 'd') dig();
+  else if (k === 'r') tap();
+  else if (k === 's') $('filters').classList.toggle('open');
+  else if (k === 'c') $('btn-copy').click();
+  else if (k === 'f') toggleFav();
+  else if (k === 'v') toggleStream();
+  else if (k === 'y') downloadAudio();
+});
+</script>
+</body>
+</html>
