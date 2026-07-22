@@ -18,6 +18,7 @@ download endpoint executes a subprocess based on request input.
 import http.server
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -30,6 +31,29 @@ PORT = int(os.environ.get('PORT', '8765'))
 HOST = os.environ.get('HOST', '127.0.0.1')
 APP_FILE = 'sample-digger.html'   # served on the main route "/"
 YOUTUBE_RE = re.compile(r'^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\w-]{11}([&?].*)?$')
+
+# yt-dlp and ffmpeg are installed via Nix on Codesphere (see ci.yml), which lands
+# them in ~/.nix-profile/bin. Prefer that, then anything on PATH, then the pip
+# module (local dev). The subprocess PATH is augmented with the Nix bin dir so
+# yt-dlp can find ffmpeg for the mp3 conversion.
+NIX_BIN = os.path.expanduser('~/.nix-profile/bin')
+
+
+def ytdlp_command():
+    nix = os.path.join(NIX_BIN, 'yt-dlp')
+    if os.path.exists(nix):
+        return [nix]
+    found = shutil.which('yt-dlp')
+    if found:
+        return [found]
+    return [sys.executable, '-m', 'yt_dlp']
+
+
+def subprocess_env():
+    env = dict(os.environ)
+    if os.path.isdir(NIX_BIN):
+        env['PATH'] = NIX_BIN + os.pathsep + env.get('PATH', '')
+    return env
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -57,15 +81,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         with tempfile.TemporaryDirectory() as tmp:
             outtmpl = os.path.join(tmp, '%(title)s.%(ext)s')
-            # Invoke yt-dlp as a module of the current interpreter so it works
-            # regardless of whether ~/.local/bin is on PATH (matters on Codesphere,
-            # where it's pip-installed in the prepare step).
             try:
                 subprocess.run(
-                    [sys.executable, '-m', 'yt_dlp', '-x', '--audio-format', 'mp3',
+                    ytdlp_command() + ['-x', '--audio-format', 'mp3',
                      '--audio-quality', '0', '--no-playlist', '-o', outtmpl, '--', url],
-                    check=True, capture_output=True, text=True, timeout=180
+                    check=True, capture_output=True, text=True, timeout=180,
+                    env=subprocess_env()
                 )
+            except FileNotFoundError:
+                self.send_json(500, {'error': 'yt-dlp is not installed on the server.'})
+                return
             except subprocess.TimeoutExpired:
                 self.send_json(504, {'error': 'Download timed out.'})
                 return
