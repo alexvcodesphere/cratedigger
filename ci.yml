@@ -4,10 +4,15 @@ schemaVersion: v0.4
 prepare:
   steps:
     - name: Install yt-dlp (for the audio download button)
-      # Best-effort: if it can't install, the app still deploys and only the
-      # Download button is unavailable. mp3 conversion additionally needs ffmpeg
-      # in the workspace image.
-      command: python3 -m pip install --upgrade yt-dlp || python3 -m pip install --user --upgrade yt-dlp || true
+      # Codesphere's Python is an externally-managed (PEP 668) env, so pip needs
+      # --break-system-packages. The container is disposable, so this is safe.
+      # Non-fatal: if it still can't install, the app deploys and only the
+      # Download button is unavailable.
+      command: python3 -m pip install --upgrade --break-system-packages yt-dlp || python3 -m pip install --upgrade --user --break-system-packages yt-dlp || true
+    - name: Install ffmpeg (mp3 conversion for downloads; best-effort)
+      # yt-dlp needs ffmpeg to transcode to mp3. Best-effort — the core app
+      # (digging, playback, filters) doesn't depend on it.
+      command: if ! command -v ffmpeg >/dev/null 2>&1; then (apt-get update && apt-get install -y ffmpeg) || (sudo apt-get update && sudo apt-get install -y ffmpeg) || true; fi
 
 # Verification that runs after prepare.
 test:
