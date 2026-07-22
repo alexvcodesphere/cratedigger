@@ -1069,7 +1069,9 @@ function renderList() {
     const l2 = document.createElement('div'); l2.className = 'a'; l2.textContent = t.artist + ' · ' + t.year;
     txt.append(l1, l2);
     el.append(img, txt);
-    el.onclick = () => { current = t; play(t); pushHistory(t); renderMeta(t); renderList(); updateFavBtn(); };
+    // Replay a listed track without reordering/mutating the list — clicking an
+    // older entry should just jump to it, not shuffle it to the top.
+    el.onclick = () => { current = t; play(t); renderMeta(t); renderList(); updateFavBtn(); };
     list.appendChild(el);
   });
 }
