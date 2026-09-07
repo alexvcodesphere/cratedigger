@@ -6,20 +6,23 @@
 <title>Sample Casino — random sample finder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #08080b;
+    --bg: #06060a;
     --glass: rgba(19, 19, 25, .55);
     --glass-border: rgba(255, 255, 255, .08);
     --text: #f4f4f6;
-    --muted: #9a9aa6;
+    --muted: #8e8b9c;         /* violet-biased grey, sits inside the palette */
     --accent: #f018c8;
     --accent-2: #8a2be2;
     --accent-soft: rgba(240, 24, 200, .16);
+    --gold: #f5c451;          /* chips and grails only — its scarcity is the point */
+    --mint: #34e0a1;          /* live state and the uncommon tier */
     --dyn1: #f018c8;          /* dynamic, extracted from cover art */
     --dyn2: #7b2ff7;
     --radius: 20px;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -322,7 +325,7 @@
   .track img { width: 46px; height: 46px; border-radius: 10px; object-fit: cover; background: #222; flex-shrink: 0; }
   .track .t { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .track .a { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .track > div { min-width: 0; }
+  .track > div { min-width: 0; flex: 1; }   /* pushes the multiplier to the right edge */
   .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 0; }
 
   /* ---------- lower third (stream mode) ---------- */
@@ -352,7 +355,7 @@
 
   /* stream mode: hide everything except player + lower third + controls */
   body.stream #meta, body.stream .side, body.stream #filters,
-  body.stream #bpm-box, body.stream .token-box { display: none !important; }
+  body.stream #bpm-box, body.stream .token-box, body.stream .slip { display: none !important; }
   body.stream .layout { grid-template-columns: 1fr; max-width: 1060px; }
 
   /* ---------- mobile ---------- */
@@ -381,30 +384,101 @@
     .lt-bpm { font-size: 13px; padding: 8px 12px; }
   }
 
-  /* ---------- rarity (from Discogs want/have stats) ---------- */
-  .chip.tier { text-transform: uppercase; letter-spacing: .09em; font-size: 11px; border-color: transparent; }
-  .chip.tier-common { background: rgba(143,160,184,.15); color: #aebdd1; }
-  .chip.tier-rare { background: rgba(63,169,255,.17); color: #7cc4ff; }
-  .chip.tier-epic { background: rgba(160,107,255,.2); color: #c5a3ff; }
-  .chip.tier-legendary { background: rgba(255,185,48,.2); color: #ffd27a; text-shadow: 0 0 16px rgba(255,185,48,.6); }
+  /* ---------- payout tier (from Discogs want/have stats) ---------- */
+  .chip.tier {
+    font-family: var(--mono); text-transform: uppercase; letter-spacing: .09em;
+    font-size: 10.5px; font-weight: 600; border-color: transparent;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .chip.tier::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .chip.tier-common { background: rgba(255,255,255,.06); color: var(--muted); box-shadow: inset 0 0 0 1px var(--glass-border); }
+  .chip.tier-uncommon { background: rgba(52,224,161,.11); color: var(--mint); }
+  .chip.tier-rare { background: rgba(123,47,247,.17); color: #b79bff; }
+  .chip.tier-grail { background: rgba(245,196,81,.14); color: var(--gold); text-shadow: 0 0 16px rgba(245,196,81,.5); }
 
-  /* ---------- rolls-left meter (Discogs rate-limit budget) ---------- */
+  /* payout line — want/have made legible under the meta rows */
+  #payout { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--glass-border); display: none; }
+  #payout.on { display: block; }
+  .payout-bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,.07); overflow: hidden; margin-bottom: 7px; }
+  .payout-bar i {
+    display: block; height: 100%; width: 0; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent-2), var(--gold));
+    transition: width .6s cubic-bezier(.2,.8,.2,1);
+  }
+  .payout-note { font-family: var(--mono); font-size: 10.5px; color: var(--muted); letter-spacing: .03em; }
+  .payout-note b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  /* ---------- chip balance (the Discogs rate-limit budget, read as a stake) ---------- */
   .fuel {
-    display: flex; align-items: center; gap: 9px;
-    padding: 8px 14px; border-radius: 12px;
-    background: var(--glass); border: 1px solid var(--glass-border);
-    font-size: 12.5px; color: var(--muted); white-space: nowrap;
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 14px 7px 11px; border-radius: 999px;
+    background: rgba(245,196,81,.07); border: 1px solid rgba(245,196,81,.26);
+    font-family: var(--mono); font-size: 11.5px; color: var(--gold);
+    letter-spacing: .03em; white-space: nowrap;
   }
-  .fuel b { color: var(--text); font-variant-numeric: tabular-nums; }
-  .fuel-bar { width: 52px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.09); overflow: hidden; }
-  .fuel-bar i {
-    display: block; height: 100%; width: 100%; border-radius: 3px;
-    background: linear-gradient(90deg, var(--accent-2), var(--accent));
-    transition: width .5s ease;
+  .fuel b { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .chip-row { display: flex; gap: 3px; }
+  .chip-pip {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+    box-shadow: 0 0 8px rgba(245,196,81,.5);
+    transition: background-color .35s ease, box-shadow .35s ease;
   }
-  .fuel.low { border-color: rgba(255,92,92,.4); }
-  .fuel.low .fuel-bar i { background: #ff5c5c; }
-  .fuel.low b { color: #ff8484; }
+  .chip-pip.spent { background: rgba(245,196,81,.18); box-shadow: none; }
+  .fuel.low { border-color: rgba(255,92,92,.45); background: rgba(255,92,92,.07); color: #ff8484; }
+  .fuel.low .chip-pip { background: #ff5c5c; box-shadow: 0 0 8px rgba(255,92,92,.5); }
+  .fuel.low .chip-pip.spent { background: rgba(255,92,92,.2); box-shadow: none; }
+
+  /* ---------- odds slip (the table you're playing, above the dock) ---------- */
+  .slip {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    margin-top: 16px; padding: 11px 18px; border-radius: 14px;
+    background: linear-gradient(100deg, rgba(123,47,247,.16), rgba(240,24,200,.08));
+    border: 1px solid rgba(123,47,247,.3);
+    font-family: var(--mono);
+  }
+  .slip-l { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+  .slip-lab { font-size: 9.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+  .slip-val { font-size: 14px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .slip-val.grail { color: var(--gold); }
+  .slip-r { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--mint); }
+  .slip-r::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .slip-r.idle { color: var(--muted); }
+
+  /* ---------- session tape (history rows carry their tier and multiplier) ---------- */
+  .track .pip { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .pip-common { background: rgba(255,255,255,.22); }
+  .pip-uncommon { background: var(--mint); }
+  .pip-rare { background: #9b6bff; }
+  .pip-grail { background: var(--gold); box-shadow: 0 0 7px rgba(245,196,81,.8); }
+  .track .mult {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    font-variant-numeric: tabular-nums; flex-shrink: 0;
+  }
+  #session {
+    margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--glass-border);
+    display: none; align-items: baseline; justify-content: space-between;
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted); letter-spacing: .04em;
+  }
+  #session.on { display: flex; }
+  #session b { color: var(--gold); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ---------- reel settle (600ms, then the video takes over) ---------- */
+  .reel { display: flex; gap: 8px; }
+  .reel i {
+    width: 46px; height: 46px; border-radius: 10px; display: block;
+    border: 1px solid var(--glass-border); background: linear-gradient(160deg, #1b1826, #100e18);
+    animation: reelroll .3s steps(2) infinite;
+  }
+  .reel i:nth-child(2) { animation-delay: .1s; }
+  .reel i:nth-child(3) { animation-delay: .2s; }
+  @keyframes reelroll {
+    50% { border-color: rgba(245,196,81,.45); background: linear-gradient(160deg, rgba(245,196,81,.18), rgba(123,47,247,.14)); }
+  }
+  .player-wrap.settle { animation: settle .6s cubic-bezier(.2,.8,.2,1); }
+  @keyframes settle {
+    0% { box-shadow: 0 0 0 2px var(--gold), 0 30px 90px -25px var(--gold); }
+    100% { box-shadow: 0 30px 90px -25px color-mix(in srgb, var(--dyn1) 45%, transparent); }
+  }
 
   /* ---------- digging indicator (video keeps playing underneath) ---------- */
   .pull-pill {
@@ -454,12 +528,12 @@
 <header>
   <div class="logo">sample casino</div>
   <div class="header-right">
-    <div class="fuel" id="fuel" title="Discogs API budget — 25 requests/min without a token, 60 with. One dig costs a few requests; this estimates how many digs you have left this minute.">
-      <div class="fuel-bar"><i id="fuel-fill"></i></div>
-      <span>~<b id="fuel-rolls">6</b> rolls</span>
+    <div class="fuel" id="fuel" title="Discogs API budget — 25 requests/min without a token, 60 with. One spin costs a few requests; this is how many spins you have left this minute.">
+      <div class="chip-row" id="chip-row"></div>
+      <span><b id="fuel-rolls">6</b> chips<span id="refill"></span></span>
     </div>
     <div class="token-box">
-      <span class="hint" title="Optional. Raises the Discogs rate limit from 25 to 60 requests/min. Get one free at discogs.com → Settings → Developers.">Discogs token</span>
+      <span class="hint" title="Paste a free Discogs token to raise the table limit from 25 to 60 requests/min — roughly 6 chips to 14. Get one at discogs.com → Settings → Developers.">Discogs token</span>
       <input id="token" type="password" placeholder="paste token…" autocomplete="off">
     </div>
     <button id="btn-stream" title="Clean layout for streams / screen recordings">Stream mode <span class="key">V</span></button>
@@ -470,23 +544,36 @@
 
   <!-- now playing -->
   <div class="card" id="meta">
-    <div class="eyebrow"><span class="eq"><i></i><i></i><i></i><i></i></span> Now playing</div>
-    <h2 id="m-title">Hit Random to dig</h2>
+    <div class="eyebrow"><span class="eq"><i></i><i></i><i></i><i></i></span> Last pull</div>
+    <h2 id="m-title">No spin yet</h2>
     <div id="m-artist-big">—</div>
     <div class="chips" id="m-chips"></div>
     <div class="meta-row"><span class="k">Release</span><span id="m-release">—</span></div>
     <div class="meta-row"><span class="k">Label</span><span id="m-label">—</span></div>
     <div class="meta-row"><span class="k">Owned</span><span id="m-owned">—</span></div>
     <div class="meta-row"><span class="k">Links</span><span id="m-links">—</span></div>
+    <div id="payout">
+      <div class="payout-bar"><i id="payout-fill"></i></div>
+      <div class="payout-note" id="payout-note"></div>
+    </div>
     <div class="vinyl"><div class="disc"><img id="cover" alt="Cover art"></div></div>
   </div>
 
   <!-- player -->
   <div class="main">
     <div class="player-wrap">
-      <div id="status"><div>Press <b>Random</b> (or hit D) to pull a track from the crates.</div></div>
+      <div id="status"><div>Hit <b>SPIN</b> (or D) to pull a track from the crates.</div></div>
       <div id="yt"></div>
-      <div class="pull-pill"><span class="spinner"></span><span>digging <span id="pill-word">soul</span>…</span></div>
+      <div class="pull-pill"><span class="spinner"></span><span>the reel is turning — <span id="pill-word">soul</span>…</span></div>
+    </div>
+
+    <!-- odds slip: the table you're playing, straight from the last Discogs count -->
+    <div class="slip">
+      <div class="slip-l">
+        <span class="slip-lab">Table</span><span class="slip-val" id="slip-pool">—</span>
+        <span class="slip-lab">Grail odds</span><span class="slip-val grail" id="slip-odds">—</span>
+      </div>
+      <div class="slip-r idle" id="slip-src">no spin yet</div>
     </div>
 
     <!-- lower third for stream mode -->
@@ -494,7 +581,7 @@
       <div class="lt-disc"><img id="lt-cover" alt=""></div>
       <div class="lt-text">
         <div class="lt-title" id="lt-title"><span id="lt-title-inner">Nothing playing yet</span></div>
-        <div class="lt-sub" id="lt-sub">hit D to dig</div>
+        <div class="lt-sub" id="lt-sub">hit D to spin</div>
       </div>
       <div class="lt-bpm" id="lt-bpm">— BPM</div>
     </div>
@@ -506,7 +593,7 @@
       <button class="dock-btn" id="btn-tempo" data-key="R" title="Tap tempo">
         <svg viewBox="0 0 24 24"><polyline points="2 12 6 12 9 5 15 19 18 12 22 12"/></svg>
       </button>
-      <button id="btn-random" class="dig" data-key="D" title="Dig a random track">DIG</button>
+      <button id="btn-random" class="dig" data-key="D" title="Spin for a random track">SPIN</button>
       <button class="dock-btn" id="btn-play" data-key="␣" title="Play / pause">
         <svg class="icon-play" viewBox="0 0 24 24"><polygon points="8 5.5 18.5 12 8 18.5"/></svg>
         <svg class="icon-pause" viewBox="0 0 24 24"><rect x="7" y="5.5" width="3.4" height="13" rx="1"/><rect x="13.6" y="5.5" width="3.4" height="13" rx="1"/></svg>
@@ -596,7 +683,8 @@
       <button id="tab-history" class="active">History</button>
       <button id="tab-favs">Favorites</button>
     </div>
-    <div id="list"><div class="empty">Nothing dug up yet.</div></div>
+    <div id="list"><div class="empty">No spins yet. The tape fills as you play.</div></div>
+    <div id="session"><span>Session</span><span id="session-stats"></span></div>
   </div>
 
 </div>
@@ -634,22 +722,40 @@ async function api(url) {
   return res.json();
 }
 
-/* ---------- rolls-left meter ----------
+/* ---------- chip balance ----------
    Discogs allows 25 req/min without a token, 60 with (rolling window).
-   We track our own requests; one dig costs several (search + release lookups). */
+   We track our own requests; one spin costs several (search + release lookups).
+   Chips = spins left this minute, so the rate limit reads as a stake. */
 let reqLog = [], rlBlockedUntil = 0, reqTotal = 0, digTotal = 0;
+const MAX_PIPS = 12;             // beyond this the row stops being countable at a glance
 function fuelInfo() {
   const now = Date.now();
   reqLog = reqLog.filter(t => now - t < 60000);
   const limit = $('token').value.trim() ? 60 : 25;
   const rem = now < rlBlockedUntil ? 0 : Math.max(0, limit - reqLog.length);
   const perDig = digTotal ? Math.max(1, reqTotal / digTotal) : 4;
-  return { limit, rem, rolls: Math.floor(rem / perDig) };
+  return { limit, rem, perDig, rolls: Math.floor(rem / perDig), max: Math.floor(limit / perDig) };
+}
+/* Seconds until the oldest request leaves the rolling window — i.e. when the
+   next chip comes back. Null while the balance is already full. */
+function refillIn(f) {
+  if (f.rolls >= f.max || !reqLog.length) return null;
+  if (Date.now() < rlBlockedUntil) return Math.ceil((rlBlockedUntil - Date.now()) / 1000);
+  return Math.max(1, Math.ceil((reqLog[0] + 60000 - Date.now()) / 1000));
 }
 function updateFuel() {
   const f = fuelInfo();
-  $('fuel-fill').style.width = (f.rem / f.limit * 100) + '%';
+  const pips = Math.max(1, Math.min(f.max, MAX_PIPS));
+  const lit = f.max ? Math.round(f.rolls / f.max * pips) : 0;
+  const row = $('chip-row');
+  if (row.children.length !== pips) {
+    row.innerHTML = '';
+    for (let i = 0; i < pips; i++) row.appendChild(document.createElement('i')).className = 'chip-pip';
+  }
+  [...row.children].forEach((el, i) => el.classList.toggle('spent', i >= lit));
   $('fuel-rolls').textContent = f.rolls;
+  const secs = refillIn(f);
+  $('refill').textContent = secs === null ? '' : ' · refills 0:' + String(secs).padStart(2, '0');
   $('fuel').classList.toggle('low', f.rolls <= 1);
 }
 setInterval(updateFuel, 1000);
@@ -705,9 +811,51 @@ async function refillPool() {
   }
   pool = d.results || [];
   poolKey = baseKey();
+  setTable(d.pagination ? d.pagination.items : null, year);
   return pool.length > 0;
 }
 function baseKey() { return filterParams(null).toString(); }
+
+/* ---------- the table & the odds ----------
+   Table size is the item count Discogs already returns with every search, so it
+   costs no extra request. Grail odds are sampled from this session's own spins
+   rather than probed — an honest running rate, not a guess. */
+let table = { items: null, year: null };
+let session = { spins: 0, grails: 0 };
+
+function setTable(items, year) {
+  if (items == null) return;
+  table = { items, year };
+  updateSlip();
+}
+function recordSpin(t) {
+  session.spins++;
+  if (t.tier === 'grail') session.grails++;
+  updateSlip();
+  renderSession();
+  const pw = document.querySelector('.player-wrap');
+  pw.classList.remove('settle'); void pw.offsetWidth; pw.classList.add('settle');
+}
+function updateSlip() {
+  $('slip-pool').textContent = table.items == null
+    ? '—'
+    : table.items.toLocaleString() + (table.items === 1 ? ' release' : ' releases');
+  $('slip-odds').textContent =
+    session.spins < 5 ? 'sampling…'
+    : session.grails ? '1 in ' + Math.round(session.spins / session.grails)
+    : 'none in ' + session.spins;
+  const src = $('slip-src');
+  src.classList.toggle('idle', table.items == null);
+  src.textContent = table.items == null
+    ? 'no spin yet'
+    : 'live from Discogs' + (table.year ? ' · ' + table.year : '');
+}
+function renderSession() {
+  $('session').classList.toggle('on', session.spins > 0);
+  $('session-stats').innerHTML =
+    '<b>' + session.spins + '</b> spin' + (session.spins === 1 ? '' : 's') +
+    ' · <b>' + session.grails + '</b> grail' + (session.grails === 1 ? '' : 's');
+}
 
 /* ---------- dig ---------- */
 async function dig() {
@@ -761,9 +909,11 @@ async function dig() {
         cover: item.cover_image && !item.cover_image.includes('spacer.gif') ? item.cover_image : '',
         releaseId: rel.id,
         tier: rarityOf(rel),
+        mult: multOf(rel),
         have: (rel.community || {}).have || 0,
         want: (rel.community || {}).want || 0
       };
+      recordSpin(current);
       play(current);
       pushHistory(current);
       renderMeta(current);
@@ -771,9 +921,9 @@ async function dig() {
       updateFavBtn();
       return;
     }
-    digMsg('Couldn\'t find a playable video after several tries — hit Random again.');
+    digMsg('Couldn\'t find a playable video after several tries — hit SPIN again.');
   } catch (e) {
-    if (e.message === 'rate') digMsg('Discogs rate limit hit — wait a minute, or paste a free Discogs token (top right) to raise it.');
+    if (e.message === 'rate') digMsg('Out of chips — the table refills within a minute. A free Discogs token (top right) raises the limit to 14.');
     else digMsg('Something went wrong talking to Discogs (' + e.message + '). Try again.');
   } finally {
     digging = false;
@@ -805,17 +955,30 @@ function digMsg(msg) {
   else setStatus(msg);
 }
 
-/* ---------- rarity from Discogs collection stats ----------
-   score = want / have — how much more the record is wanted than owned */
-function rarityOf(rel) {
+/* ---------- payout tier from Discogs collection stats ----------
+   The multiplier is want / have: how much more the record is wanted than owned.
+   It is the closest thing crate digging has to an objective rarity signal, and
+   it costs nothing — Discogs already returns both numbers with the release. */
+const TIERS = [
+  { name: 'grail',    min: 4 },
+  { name: 'rare',     min: 1.5 },
+  { name: 'uncommon', min: 0.5 },
+  { name: 'common',   min: 0 }
+];
+function multOf(rel) {
   const c = rel.community || {};
   const have = c.have || 0, want = c.want || 0;
-  if (!have && !want) return 'common';
-  const score = want / (have + 1);
-  if (score >= 1.2 || (have < 30 && want > 20)) return 'legendary';
-  if (score >= 0.7) return 'epic';
-  if (score >= 0.35) return 'rare';
-  return 'common';
+  if (!have && !want) return null;
+  return want / (have + 1);
+}
+function rarityOf(rel) {
+  const m = multOf(rel);
+  if (m === null) return 'common';
+  const c = rel.community || {};
+  // Private presses barely anyone owns: a raw ratio is noisy at these counts,
+  // but a handful of owners against a crowd of wanters is a grail either way.
+  if ((c.have || 0) < 30 && (c.want || 0) > 20) return 'grail';
+  return TIERS.find(t => m >= t.min).name;
 }
 
 /* Dead YouTube videos serve a 120x90 placeholder thumbnail; live ones are 480x360. */
@@ -838,7 +1001,9 @@ function setStatus(msg) {
   $('status').style.display = msg ? 'flex' : 'none';
 }
 function showDigging() {
-  setStatus('<div class="dig-line">digging <span id="dig-word">soul</span>…</div><div>flipping through the crates</div>');
+  setStatus('<div class="reel"><i></i><i></i><i></i></div>' +
+            '<div class="dig-line">spinning <span id="dig-word">soul</span>…</div>' +
+            '<div>' + (table.items ? table.items.toLocaleString() + ' records deep' : 'shuffling the crates') + '</div>');
   let i = 0;
   digTimer = setInterval(() => {
     const el = $('dig-word');
@@ -872,7 +1037,7 @@ function onPlayerError() {
   // every bad video. Remember it so this session never re-serves it, and let
   // the person decide when to spend another dig.
   if (current) deadVideos.add(current.videoId);
-  digMsg('That video won\'t embed here — hit Dig for another (D)');
+  digMsg('That video won\'t embed here — hit SPIN for another (D)');
 }
 const ytScript = document.createElement('script');
 ytScript.src = 'https://www.youtube.com/iframe_api';
@@ -997,8 +1162,9 @@ function renderMeta(t) {
   $('m-release').textContent = t.release;
   $('m-label').textContent = t.label;
   $('m-owned').textContent = (t.have || t.want)
-    ? t.have.toLocaleString() + ' diggers · ' + t.want.toLocaleString() + ' want it'
+    ? t.have.toLocaleString() + ' own · ' + t.want.toLocaleString() + ' want'
     : '—';
+  renderPayout(t);
   $('m-links').innerHTML =
     '<a href="' + t.discogsUrl + '" target="_blank">Discogs</a> · ' +
     '<a href="' + t.watchUrl + '" target="_blank">YouTube</a>';
@@ -1012,6 +1178,19 @@ function renderMeta(t) {
     const el = $(id); el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap');
   });
 }
+/* The payout line: the want/have multiplier the tier badge is derived from,
+   spelled out so the badge is never an unexplained verdict. */
+function renderPayout(t) {
+  const on = t.mult != null;
+  $('payout').classList.toggle('on', on);
+  if (!on) return;
+  const m = t.mult;
+  $('payout-fill').style.width = Math.min(100, Math.max(3, m / 5 * 100)) + '%';
+  $('payout-note').innerHTML = m >= 1
+    ? '<b>' + m.toFixed(1) + '×</b> more wanted than owned'
+    : '<b>' + (1 / (m || 0.01)).toFixed(1) + '×</b> more owned than wanted';
+}
+
 function updateLowerThird(t) {
   const inner = $('lt-title-inner');
   const title = t.artist + ' — ' + t.release;
@@ -1054,7 +1233,7 @@ function renderList() {
   const items = activeTab === 'history' ? history : favs;
   const list = $('list');
   if (!items.length) {
-    list.innerHTML = '<div class="empty">' + (activeTab === 'history' ? 'Nothing dug up yet.' : 'No favorites yet — hit ☆ on a track you like.') + '</div>';
+    list.innerHTML = '<div class="empty">' + (activeTab === 'history' ? 'No spins yet. The tape fills as you play.' : 'No favorites yet — hit ☆ on a track you like.') + '</div>';
     return;
   }
   list.innerHTML = '';
@@ -1068,7 +1247,16 @@ function renderList() {
     const l1 = document.createElement('div'); l1.className = 't'; l1.textContent = t.title;
     const l2 = document.createElement('div'); l2.className = 'a'; l2.textContent = t.artist + ' · ' + t.year;
     txt.append(l1, l2);
-    el.append(img, txt);
+    const pip = document.createElement('i');
+    pip.className = 'pip pip-' + (t.tier || 'common');
+    pip.title = (t.tier || 'common') + ' pull';
+    el.append(pip, img, txt);
+    if (t.mult != null) {
+      const mult = document.createElement('span');
+      mult.className = 'mult';
+      mult.textContent = t.mult.toFixed(1) + '×';
+      el.append(mult);
+    }
     // Replay a listed track without reordering/mutating the list — clicking an
     // older entry should just jump to it, not shuffle it to the top.
     el.onclick = () => { current = t; play(t); renderMeta(t); renderList(); updateFavBtn(); };
