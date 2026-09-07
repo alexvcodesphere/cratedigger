@@ -52,7 +52,16 @@
   }
 
   /* ---------- header ---------- */
-  header { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; }
+  /* Same max-width and side padding as .layout, so the nav box lines up with
+     the cards below it rather than floating over the full page width. */
+  header { max-width: 1540px; margin: 0 auto; padding: 18px 28px 22px; }   /* 22px = the .layout gap */
+  .nav {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 18px; border-radius: var(--radius);
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(22px) saturate(1.3);
+    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  }
   .logo {
     font-family: "Unbounded", sans-serif; font-size: 20px; font-weight: 900; letter-spacing: -.5px;
     background: linear-gradient(100deg, #fff 20%, var(--dyn1) 60%, var(--dyn2));
@@ -360,7 +369,8 @@
 
   /* ---------- mobile ---------- */
   @media (max-width: 640px) {
-    header { flex-wrap: wrap; row-gap: 10px; padding: 14px 16px; }
+    header { padding: 14px 14px 0; }
+    .nav { flex-wrap: wrap; row-gap: 10px; padding: 12px 14px; }
     .token-box .hint { display: none; }
     .token-box input { width: 130px; }
     .layout { padding: 0 14px 110px; gap: 14px; }   /* room for the fixed dock */
@@ -526,6 +536,7 @@
 <div id="grain"></div>
 
 <header>
+ <div class="nav">
   <div class="logo">sample casino</div>
   <div class="header-right">
     <div class="fuel" id="fuel" title="Discogs API budget — 25 requests/min without a token, 60 with. One spin costs a few requests; this is how many spins you have left this minute.">
@@ -536,8 +547,8 @@
       <span class="hint" title="Paste a free Discogs token to raise the table limit from 25 to 60 requests/min — roughly 6 chips to 14. Get one at discogs.com → Settings → Developers.">Discogs token</span>
       <input id="token" type="password" placeholder="paste token…" autocomplete="off">
     </div>
-    <button id="btn-stream" title="Clean layout for streams / screen recordings">Stream mode <span class="key">V</span></button>
   </div>
+ </div>
 </header>
 
 <div class="layout">
@@ -1345,7 +1356,8 @@ async function downloadAudio() {
     btn.classList.remove('loading');
   }
 }
-$('btn-stream').onclick = toggleStream;
+/* Stream mode has no nav button any more — the layout is kept for a later
+   repurpose and stays reachable on V. */
 function toggleStream() {
   const on = document.body.classList.toggle('stream');
   toast(on ? 'Stream mode on — V to exit' : 'Stream mode off');
