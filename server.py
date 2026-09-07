@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Server for Crate Digger.
+Server for Sample Casino.
 
 Serves the static files and the single-page app on the root route, plus one
 extra endpoint the app's Download button calls:
@@ -37,6 +37,29 @@ YOUTUBE_RE = re.compile(r'^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\
 # module (local dev). The subprocess PATH is augmented with the Nix bin dir so
 # yt-dlp can find ffmpeg for the mp3 conversion.
 NIX_BIN = os.path.expanduser('~/.nix-profile/bin')
+
+# YouTube encrypts its media URLs behind a JS challenge (the "sig"/"n" params).
+# yt-dlp needs BOTH a JavaScript runtime and the yt-dlp-ejs solver script to
+# answer it; without them it silently falls back to the android_vr client, whose
+# media URLs YouTube rejects with HTTP 403. Only deno is enabled by default, so
+# name the other runtimes too and let yt-dlp pick whichever is installed.
+JS_RUNTIMES = ['deno', 'node', 'bun']
+# The default client order also lands on android_vr (403). web_safari and mweb
+# hand back working links. Their https audio-only formats need a GVS PO token we
+# don't have, so only the muxed HLS streams are usable: cap the height to keep
+# the download small, but stay above 240p — 144p/240p carry HE-AAC (mp4a.40.5),
+# while 360p and up carry full AAC-LC (mp4a.40.2), which is what we extract from.
+PLAYER_CLIENTS = 'web_safari,mweb'
+AUDIO_FORMAT = 'bestaudio/best[height<=480][height>=360]/best[height<=480]/best'
+
+
+def youtube_args():
+    args = []
+    for runtime in JS_RUNTIMES:
+        args += ['--js-runtimes', runtime]
+    args += ['--extractor-args', f'youtube:player_client={PLAYER_CLIENTS}']
+    args += ['-f', AUDIO_FORMAT]
+    return args
 
 
 def ytdlp_command():
@@ -83,7 +106,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             outtmpl = os.path.join(tmp, '%(title)s.%(ext)s')
             try:
                 subprocess.run(
-                    ytdlp_command() + ['-x', '--audio-format', 'mp3',
+                    ytdlp_command() + youtube_args() + ['-x', '--audio-format', 'mp3',
                      '--audio-quality', '0', '--no-playlist', '-o', outtmpl, '--', url],
                     check=True, capture_output=True, text=True, timeout=180,
                     env=subprocess_env()
@@ -98,6 +121,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 err = (e.stderr or '').strip()
                 if 'No module named' in err:
                     self.send_json(500, {'error': 'yt-dlp is not installed on the server.'})
+                    return
+                # A missing JS runtime or solver script surfaces as a bare "HTTP Error
+                # 403" on the media URL, which points nowhere useful. The real cause is
+                # in the warnings above it, so check for those first.
+                if ('challenge solving failed' in err or 'Signature solving failed' in err
+                        or 'No supported JavaScript runtime' in err):
+                    self.send_json(500, {'error': 'yt-dlp cannot solve YouTube\'s JS '
+                                        'challenge. Install a JS runtime (deno) and the '
+                                        'yt-dlp-ejs solver package on the server.'})
                     return
                 msg = err.splitlines()[-1] if err else 'yt-dlp failed.'
                 self.send_json(502, {'error': msg[:200]})
@@ -137,5 +169,5 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     httpd = http.server.ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f'Serving Crate Digger on http://{HOST}:{PORT} (Ctrl+C to stop)')
+    print(f'Serving Sample Casino on http://{HOST}:{PORT} (Ctrl+C to stop)')
     httpd.serve_forever()

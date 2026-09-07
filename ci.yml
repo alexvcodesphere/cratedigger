@@ -5,6 +5,10 @@ prepare:
       command: nix-env -iA nixpkgs.yt-dlp || (nix-channel --update && nix-env -iA nixpkgs.yt-dlp) || true
     - name: Install ffmpeg via Nix (mp3 conversion for downloads)
       command: command -v ffmpeg >/dev/null 2>&1 || nix-env -iA nixpkgs.ffmpeg || (nix-channel --update && nix-env -iA nixpkgs.ffmpeg) || true
+    - name: Install deno via Nix (JS runtime for YouTube's sig/n challenge)
+      command: command -v deno >/dev/null 2>&1 || nix-env -iA nixpkgs.deno || (nix-channel --update && nix-env -iA nixpkgs.deno) || true
+    - name: Install the yt-dlp-ejs challenge solver (without it YouTube returns 403)
+      command: pip install --user --break-system-packages yt-dlp-ejs || pip install --user yt-dlp-ejs || true
 test:
   steps:
     - name: Syntax-check the server
@@ -25,5 +29,5 @@ run:
       PORT: 3000
       HOST: 0.0.0.0
     steps:
-      - name: Start Crate Digger
+      - name: Start Sample Casino
         command: python3 server.py
