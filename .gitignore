@@ -4,3 +4,4 @@ __pycache__/
 
 stable.html
 _preview-*.html
+.claude/

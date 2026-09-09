@@ -16,6 +16,7 @@ Bound to 127.0.0.1 — Codesphere routes external traffic to localhost, and the
 download endpoint executes a subprocess based on request input.
 """
 import http.server
+import importlib.util
 import json
 import re
 import shutil
@@ -32,10 +33,9 @@ HOST = os.environ.get('HOST', '127.0.0.1')
 APP_FILE = 'sample-digger.html'   # served on the main route "/"
 YOUTUBE_RE = re.compile(r'^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\w-]{11}([&?].*)?$')
 
-# yt-dlp and ffmpeg are installed via Nix on Codesphere (see ci.yml), which lands
-# them in ~/.nix-profile/bin. Prefer that, then anything on PATH, then the pip
-# module (local dev). The subprocess PATH is augmented with the Nix bin dir so
-# yt-dlp can find ffmpeg for the mp3 conversion.
+# ffmpeg and deno come from Nix on Codesphere (see ci.yml), which lands them in
+# ~/.nix-profile/bin. The subprocess PATH is augmented with that dir so yt-dlp
+# can find ffmpeg for the mp3 conversion.
 NIX_BIN = os.path.expanduser('~/.nix-profile/bin')
 
 # YouTube encrypts its media URLs behind a JS challenge (the "sig"/"n" params).
@@ -63,6 +63,14 @@ def youtube_args():
 
 
 def ytdlp_command():
+    # Run yt-dlp as a module of THIS interpreter first. yt-dlp has to import the
+    # yt_dlp_ejs solver package to answer YouTube's JS challenge, so the two must
+    # live in the same interpreter — a standalone yt-dlp binary (Nix, pipx, a
+    # distro package) brings its own Python that cannot see our site-packages,
+    # and downloads then fail with a bare HTTP 403. Only fall back to a binary if
+    # the module isn't importable at all.
+    if importlib.util.find_spec('yt_dlp') is not None:
+        return [sys.executable, '-m', 'yt_dlp']
     nix = os.path.join(NIX_BIN, 'yt-dlp')
     if os.path.exists(nix):
         return [nix]
